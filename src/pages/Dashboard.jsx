@@ -14,14 +14,7 @@ import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { compressImage } from '../utils/compressImage'
-
-const MOODS = [
-  { v: 'amazing', e: '😊', l: 'Amazing' },
-  { v: 'good', e: '🙂', l: 'Good' },
-  { v: 'okay', e: '😐', l: 'Okay' },
-  { v: 'sad', e: '😔', l: 'Sad' },
-  { v: 'hard', e: '😢', l: 'Hard day' },
-]
+import { MOODS } from '../utils/moods'
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10)
@@ -152,7 +145,12 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3">😊 Daily check-in</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">😊 Daily check-in</h3>
+            <Link to="/checkins" className="text-xs text-peach font-semibold">
+              History →
+            </Link>
+          </div>
           {myCheckin ? (
             <>
               <div className="text-sm text-[#9a8a9c]">

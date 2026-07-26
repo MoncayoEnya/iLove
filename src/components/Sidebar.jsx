@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 
 const items = [
   ['/dashboard', '◆', 'Dashboard'],
+  ['/checkins', '😊', 'Check-ins'],
   ['/chat', '✉', 'Chat'],
   ['/tasks', '✓', 'Tasks'],
   ['/calendar', '▤', 'Calendar'],

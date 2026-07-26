@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LinkPartner from './pages/LinkPartner'
 import Dashboard from './pages/Dashboard'
+import CheckIns from './pages/CheckIns'
 import Chat from './pages/Chat'
 import Tasks from './pages/Tasks'
 import CalendarPage from './pages/CalendarPage'
@@ -49,6 +50,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <Dashboard />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/checkins"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <CheckIns />
             </AppLayout>
           </ProtectedRoute>
         }
