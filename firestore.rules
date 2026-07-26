@@ -14,6 +14,32 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid in coupleData(coupleId).members;
     }
 
+    // inviteCodes/{code} — a tiny public lookup collection that maps an
+    // invite code to the uid that owns it. This is what lets the
+    // "Link accounts" flow resolve a partner's code *before* the two
+    // users are actually linked (and therefore before isInCouple()
+    // or isMe() on their /users/{uid} doc would ever pass).
+    //
+    // Doc shape: inviteCodes/{code} => { uid: "<owner uid>", createdAt: <timestamp> }
+    match /inviteCodes/{code} {
+      // Any signed-in user can resolve a code to a uid — this is the
+      // whole point of an invite code, it's meant to be shared.
+      allow read: if isSignedIn();
+
+      // You can only ever create a code that points to yourself.
+      allow create: if isSignedIn() &&
+        request.resource.data.uid == request.auth.uid;
+
+      // Codes are immutable once created. If you want "regenerate code"
+      // in Settings, delete the old doc and create a new one instead
+      // of trying to update this one in place.
+      allow update: if false;
+
+      // Allow the owner to delete their own code (e.g. on regenerate,
+      // or on unlink if you want to invalidate the old code).
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
     // users/{uid} — each person's own profile doc
     match /users/{uid} {
       // Only you (or your linked partner, via their couples doc) can read your profile.
@@ -27,24 +53,20 @@ service cloud.firestore {
     // couples/{coupleId} — the shared space for a linked pair
     match /couples/{coupleId} {
       allow read: if isSignedIn() && request.auth.uid in resource.data.members;
-
       // Creating a space: the creator must be a member of the new doc.
       allow create: if isSignedIn() && request.auth.uid in request.resource.data.members;
-
       // Joining: caller must already be a member OR be the one being added,
       // and the space must not already be full.
       allow update: if isSignedIn() &&
         (request.auth.uid in resource.data.members ||
           (request.auth.uid in request.resource.data.members &&
            resource.data.members.size() < 2));
-
       // Allow deleting the couple doc once you're down to the last member
       // (matches the unlink flow in AuthContext.jsx, which deletes the doc
       // when `members` would become empty).
       allow delete: if isSignedIn() &&
         request.auth.uid in resource.data.members &&
         resource.data.members.size() <= 1;
-
       // Every sub-collection (tasks, events, messages, jar, checkins,
       // recurringSeries, memories...) is only readable/writable by the
       // two linked partners.

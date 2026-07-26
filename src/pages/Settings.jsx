@@ -13,7 +13,8 @@ const NOTIF_OPTIONS = [
 ]
 
 export default function Settings() {
-  const { firebaseUser, profile, couple, resetPassword, unlinkPartner, logout } = useAuth()
+  const { firebaseUser, profile, couple, resetPassword, unlinkPartner, linkPartner, logout } =
+    useAuth()
   const { partner } = usePartner()
   const navigate = useNavigate()
 
@@ -23,6 +24,11 @@ export default function Settings() {
   const [confirmingUnlink, setConfirmingUnlink] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState('')
+
+  const [partnerCode, setPartnerCode] = useState('')
+  const [linking, setLinking] = useState(false)
+  const [linkError, setLinkError] = useState('')
+  const [codeCopied, setCodeCopied] = useState(false)
 
   async function togglePref(key) {
     await setDoc(
@@ -51,6 +57,31 @@ export default function Settings() {
     } catch (err) {
       setUnlinkError(err.message)
       setUnlinking(false)
+    }
+  }
+
+  async function handleLinkPartner(e) {
+    e.preventDefault()
+    setLinking(true)
+    setLinkError('')
+    try {
+      await linkPartner(partnerCode)
+      setPartnerCode('')
+    } catch (err) {
+      setLinkError(err.message)
+    } finally {
+      setLinking(false)
+    }
+  }
+
+  async function handleCopyCode() {
+    if (!profile?.inviteCode) return
+    try {
+      await navigator.clipboard.writeText(profile.inviteCode)
+      setCodeCopied(true)
+      setTimeout(() => setCodeCopied(false), 2000)
+    } catch {
+      // clipboard API can fail (permissions, non-secure context) — no big deal
     }
   }
 
@@ -143,7 +174,59 @@ export default function Settings() {
               )}
             </>
           ) : (
-            <div className="text-sm text-[#9a8a9c]">You're not linked with anyone yet.</div>
+            <div className="flex flex-col gap-5">
+              <p className="text-sm text-[#9a8a9c]">
+                You're not linked with anyone yet. Share your code with your partner, or
+                enter theirs below.
+              </p>
+
+              {/* Your own invite code */}
+              <div>
+                <div className="text-xs font-semibold text-[#9a8a9c] mb-1.5 uppercase tracking-wide">
+                  Your invite code
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 font-mono text-lg tracking-[0.2em] bg-[#faf6f8] border border-black/10 rounded-xl px-4 py-2.5">
+                    {profile?.inviteCode || 'Generating...'}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    disabled={!profile?.inviteCode}
+                    className="text-sm font-semibold px-4 py-2.5 rounded-xl border border-black/10 hover:bg-black/5 disabled:opacity-60"
+                  >
+                    {codeCopied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="h-px bg-black/10" />
+
+              {/* Enter partner's code */}
+              <form onSubmit={handleLinkPartner}>
+                <div className="text-xs font-semibold text-[#9a8a9c] mb-1.5 uppercase tracking-wide">
+                  Invite code from your partner
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={partnerCode}
+                    onChange={(e) => setPartnerCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. XW6637"
+                    maxLength={12}
+                    className="flex-1 font-mono text-lg tracking-[0.2em] bg-white border border-black/10 rounded-xl px-4 py-2.5 focus:outline-none focus:border-peach"
+                  />
+                  <button
+                    type="submit"
+                    disabled={linking || !partnerCode.trim()}
+                    className="text-sm font-semibold px-4 py-2.5 rounded-xl bg-peach text-white disabled:opacity-60"
+                  >
+                    {linking ? 'Linking...' : 'Link accounts'}
+                  </button>
+                </div>
+                {linkError && <div className="text-sm text-[#9b3b3b] mt-2.5">{linkError}</div>}
+              </form>
+            </div>
           )}
         </div>
 

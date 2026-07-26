@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth'
 import {
   arrayRemove,
+  collection,
   doc,
   onSnapshot,
   runTransaction,
@@ -17,6 +18,17 @@ import {
 import { auth, db } from '../firebase'
 
 const AuthContext = createContext(null)
+
+// Chars chosen to avoid visually ambiguous ones (0/O, 1/I, etc.)
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function generateCode(length = 6) {
+  let code = ''
+  for (let i = 0; i < length; i++) {
+    code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]
+  }
+  return code
+}
 
 export function AuthProvider({ children }) {
   const [firebaseUser, setFirebaseUser] = useState(undefined) // undefined = loading, null = signed out
@@ -87,6 +99,19 @@ export function AuthProvider({ children }) {
     return unsub
   }, [profile?.coupleId])
 
+  // Every user needs a public-ish invite code (stored in /inviteCodes/{code}
+  // so a partner can resolve it to a uid before the two are linked, when
+  // reading /users/{uid} directly isn't allowed yet). Generate one lazily
+  // the first time a profile loads without one.
+  useEffect(() => {
+    if (!firebaseUser || !profile) return
+    if (profile.inviteCode) return
+    ensureInviteCode().catch((err) => {
+      console.error('Failed to generate invite code:', err)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firebaseUser, profile?.inviteCode])
+
   async function signup({ displayName, email, password }) {
     const cred = await createUserWithEmailAndPassword(auth, email, password)
     await setDoc(doc(db, 'users', cred.user.uid), {
@@ -95,6 +120,7 @@ export function AuthProvider({ children }) {
       photoURL: null,
       anniversaryDate: null,
       coupleId: null,
+      inviteCode: null,
       createdAt: serverTimestamp(),
     })
     return cred.user
@@ -117,6 +143,69 @@ export function AuthProvider({ children }) {
   async function updateProfile(fields) {
     if (!firebaseUser) throw new Error('Not signed in.')
     await setDoc(doc(db, 'users', firebaseUser.uid), fields, { merge: true })
+  }
+
+  // Generates a unique invite code and saves it to both:
+  //  - users/{uid}.inviteCode  (for display in Settings)
+  //  - inviteCodes/{code}      (public-ish lookup so a partner can resolve
+  //    the code to a uid before the two accounts are linked)
+  // Returns the code. Safe to call repeatedly — it's a no-op once you
+  // already have one.
+  async function ensureInviteCode() {
+    if (!firebaseUser) throw new Error('Not signed in.')
+    if (profile?.inviteCode) return profile.inviteCode
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const code = generateCode()
+      const codeRef = doc(db, 'inviteCodes', code)
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await runTransaction(db, async (tx) => {
+          const snap = await tx.get(codeRef)
+          if (snap.exists()) throw new Error('CODE_TAKEN')
+          tx.set(codeRef, { uid: firebaseUser.uid, createdAt: serverTimestamp() })
+          tx.set(doc(db, 'users', firebaseUser.uid), { inviteCode: code }, { merge: true })
+        })
+        return code
+      } catch (err) {
+        if (err.message === 'CODE_TAKEN') continue
+        throw err
+      }
+    }
+    throw new Error('Could not generate an invite code right now — try again.')
+  }
+
+  // Links the signed-in user with whoever owns `inputCode`. Creates the
+  // shared couples doc and sets coupleId on both profiles in one
+  // transaction (see canLinkPartner() in firestore.rules for how the
+  // cross-account write is allowed).
+  async function linkPartner(inputCode) {
+    if (!firebaseUser) throw new Error('Not signed in.')
+    if (profile?.coupleId) throw new Error("You're already linked with a partner.")
+
+    const code = (inputCode || '').trim().toUpperCase()
+    if (!code) throw new Error('Enter an invite code.')
+
+    const codeRef = doc(db, 'inviteCodes', code)
+    const coupleRef = doc(collection(db, 'couples'))
+
+    await runTransaction(db, async (tx) => {
+      const codeSnap = await tx.get(codeRef)
+      if (!codeSnap.exists()) {
+        throw new Error("That code doesn't match anyone. Double check and try again.")
+      }
+      const partnerUid = codeSnap.data().uid
+      if (partnerUid === firebaseUser.uid) {
+        throw new Error("That's your own code — ask your partner for theirs.")
+      }
+
+      tx.set(coupleRef, {
+        members: [firebaseUser.uid, partnerUid],
+        createdAt: serverTimestamp(),
+      })
+      tx.set(doc(db, 'users', firebaseUser.uid), { coupleId: coupleRef.id }, { merge: true })
+      tx.set(doc(db, 'users', partnerUid), { coupleId: coupleRef.id }, { merge: true })
+    })
   }
 
   // Leave the shared couple space. If your partner already left (or there
@@ -150,6 +239,8 @@ export function AuthProvider({ children }) {
     logout,
     resetPassword,
     updateProfile,
+    ensureInviteCode,
+    linkPartner,
     unlinkPartner,
   }
 
