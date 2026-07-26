@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isMe(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+    function coupleData(coupleId) {
+      return get(/databases/$(database)/documents/couples/$(coupleId)).data;
+    }
+    function isInCouple(coupleId) {
+      return isSignedIn() && request.auth.uid in coupleData(coupleId).members;
+    }
+
+    // users/{uid} — each person's own profile doc
+    match /users/{uid} {
+      // Only you (or your linked partner, via their couples doc) can read your profile.
+      allow read: if isMe(uid) ||
+        (resource.data.coupleId != null && isInCouple(resource.data.coupleId));
+      allow create: if isMe(uid);
+      allow update: if isMe(uid);
+      allow delete: if false;
+    }
+
+    // couples/{coupleId} — the shared space for a linked pair
+    match /couples/{coupleId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.members;
+
+      // Creating a space: the creator must be a member of the new doc.
+      allow create: if isSignedIn() && request.auth.uid in request.resource.data.members;
+
+      // Joining: caller must already be a member OR be the one being added,
+      // and the space must not already be full.
+      allow update: if isSignedIn() &&
+        (request.auth.uid in resource.data.members ||
+          (request.auth.uid in request.resource.data.members &&
+           resource.data.members.size() < 2));
+
+      // Allow deleting the couple doc once you're down to the last member
+      // (matches the unlink flow in AuthContext.jsx, which deletes the doc
+      // when `members` would become empty).
+      allow delete: if isSignedIn() &&
+        request.auth.uid in resource.data.members &&
+        resource.data.members.size() <= 1;
+
+      // Every sub-collection (tasks, events, messages, jar, checkins,
+      // recurringSeries, memories...) is only readable/writable by the
+      // two linked partners.
+      match /{subcollection}/{docId} {
+        allow read, write: if isInCouple(coupleId);
+      }
+    }
+  }
+}
