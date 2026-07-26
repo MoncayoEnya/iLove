@@ -4,6 +4,7 @@ import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
+import { useLinkCouple } from '../hooks/useLinkCouple'
 
 const NOTIF_OPTIONS = [
   ['notifyChat', 'New messages'],
@@ -13,9 +14,9 @@ const NOTIF_OPTIONS = [
 ]
 
 export default function Settings() {
-  const { firebaseUser, profile, couple, resetPassword, unlinkPartner, linkPartner, logout } =
-    useAuth()
-  const { partner } = usePartner()
+  const { firebaseUser, profile, couple, resetPassword, unlinkPartner, logout } = useAuth()
+  const { partner, hasPartner } = usePartner()
+  const { createSpace, joinWithCode } = useLinkCouple()
   const navigate = useNavigate()
 
   const prefs = profile?.prefs || {}
@@ -25,10 +26,19 @@ export default function Settings() {
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState('')
 
-  const [partnerCode, setPartnerCode] = useState('')
-  const [linking, setLinking] = useState(false)
-  const [linkError, setLinkError] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [joinCode, setJoinCode] = useState('')
+  const [joining, setJoining] = useState(false)
+  const [joinError, setJoinError] = useState('')
   const [codeCopied, setCodeCopied] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+
+  // You can be in one of three states here:
+  //  - fully linked: `couple` exists AND has a partner
+  //  - pending: `couple` exists (you started a space) but partner hasn't joined yet
+  //  - unlinked: no `couple` at all
+  const isPending = !!couple && !hasPartner
 
   async function togglePref(key) {
     await setDoc(
@@ -60,24 +70,49 @@ export default function Settings() {
     }
   }
 
-  async function handleLinkPartner(e) {
-    e.preventDefault()
-    setLinking(true)
-    setLinkError('')
+  // Same underlying call as "unlink" — if you're the only member, it just
+  // deletes the pending space instead of navigating anywhere.
+  async function handleCancelSpace() {
+    setCancelling(true)
     try {
-      await linkPartner(partnerCode)
-      setPartnerCode('')
+      await unlinkPartner()
     } catch (err) {
-      setLinkError(err.message)
+      setCreateError(err.message)
     } finally {
-      setLinking(false)
+      setCancelling(false)
+    }
+  }
+
+  async function handleCreateSpace() {
+    setCreating(true)
+    setCreateError('')
+    try {
+      await createSpace()
+    } catch (err) {
+      setCreateError(err.message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleJoin(e) {
+    e.preventDefault()
+    setJoining(true)
+    setJoinError('')
+    try {
+      await joinWithCode(joinCode)
+      setJoinCode('')
+    } catch (err) {
+      setJoinError(err.message)
+    } finally {
+      setJoining(false)
     }
   }
 
   async function handleCopyCode() {
-    if (!profile?.inviteCode) return
+    if (!couple?.inviteCode) return
     try {
-      await navigator.clipboard.writeText(profile.inviteCode)
+      await navigator.clipboard.writeText(couple.inviteCode)
       setCodeCopied(true)
       setTimeout(() => setCodeCopied(false), 2000)
     } catch {
@@ -135,7 +170,8 @@ export default function Settings() {
         {/* Shared space */}
         <div className="bg-white border border-black/10 rounded-2xl p-5">
           <h3 className="font-semibold mb-3">Shared space</h3>
-          {couple ? (
+
+          {couple && hasPartner && (
             <>
               <div className="text-sm text-[#7a6a7c] mb-4">
                 Linked with <span className="font-semibold text-ink">{partner?.displayName || '...'}</span>
@@ -173,58 +209,76 @@ export default function Settings() {
                 </div>
               )}
             </>
-          ) : (
+          )}
+
+          {isPending && (
+            <>
+              <p className="text-sm text-[#9a8a9c] mb-4">
+                Waiting for your partner to join. Share this code with them:
+              </p>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="flex-1 font-mono text-lg tracking-[0.2em] bg-[#faf6f8] border border-black/10 rounded-xl px-4 py-2.5 text-center">
+                  {couple.inviteCode}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  className="text-sm font-semibold px-4 py-2.5 rounded-xl border border-black/10 hover:bg-black/5"
+                >
+                  {codeCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              {createError && <div className="text-sm text-[#9b3b3b] mb-3">{createError}</div>}
+              <button
+                onClick={handleCancelSpace}
+                disabled={cancelling}
+                className="text-sm font-semibold px-4 py-2 rounded-xl border border-[#e5b7b7] text-[#9b3b3b] hover:bg-[#fbe4e4] disabled:opacity-60"
+              >
+                {cancelling ? 'Cancelling...' : 'Cancel — start over'}
+              </button>
+            </>
+          )}
+
+          {!couple && (
             <div className="flex flex-col gap-5">
               <p className="text-sm text-[#9a8a9c]">
-                You're not linked with anyone yet. Share your code with your partner, or
-                enter theirs below.
+                You're not linked with anyone yet. Start a space and invite your partner,
+                or enter the code they sent you.
               </p>
 
-              {/* Your own invite code */}
-              <div>
-                <div className="text-xs font-semibold text-[#9a8a9c] mb-1.5 uppercase tracking-wide">
-                  Your invite code
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 font-mono text-lg tracking-[0.2em] bg-[#faf6f8] border border-black/10 rounded-xl px-4 py-2.5">
-                    {profile?.inviteCode || 'Generating...'}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCopyCode}
-                    disabled={!profile?.inviteCode}
-                    className="text-sm font-semibold px-4 py-2.5 rounded-xl border border-black/10 hover:bg-black/5 disabled:opacity-60"
-                  >
-                    {codeCopied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-              </div>
+              <button
+                onClick={handleCreateSpace}
+                disabled={creating}
+                className="text-sm font-semibold px-4 py-2.5 rounded-xl bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-60"
+              >
+                {creating ? 'Starting...' : 'Start a new space — invite my partner'}
+              </button>
+              {createError && <div className="text-sm text-[#9b3b3b]">{createError}</div>}
 
               <div className="h-px bg-black/10" />
 
-              {/* Enter partner's code */}
-              <form onSubmit={handleLinkPartner}>
+              <form onSubmit={handleJoin}>
                 <div className="text-xs font-semibold text-[#9a8a9c] mb-1.5 uppercase tracking-wide">
                   Invite code from your partner
                 </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
-                    value={partnerCode}
-                    onChange={(e) => setPartnerCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. XW6637"
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. 8K3PQZ"
                     maxLength={12}
                     className="flex-1 font-mono text-lg tracking-[0.2em] bg-white border border-black/10 rounded-xl px-4 py-2.5 focus:outline-none focus:border-peach"
                   />
                   <button
                     type="submit"
-                    disabled={linking || !partnerCode.trim()}
+                    disabled={joining || !joinCode.trim()}
                     className="text-sm font-semibold px-4 py-2.5 rounded-xl bg-peach text-white disabled:opacity-60"
                   >
-                    {linking ? 'Linking...' : 'Link accounts'}
+                    {joining ? 'Linking...' : 'Link accounts'}
                   </button>
                 </div>
-                {linkError && <div className="text-sm text-[#9b3b3b] mt-2.5">{linkError}</div>}
+                {joinError && <div className="text-sm text-[#9b3b3b] mt-2.5">{joinError}</div>}
               </form>
             </div>
           )}
