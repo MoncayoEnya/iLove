@@ -189,23 +189,32 @@ export function AuthProvider({ children }) {
     const codeRef = doc(db, 'inviteCodes', code)
     const coupleRef = doc(collection(db, 'couples'))
 
-    await runTransaction(db, async (tx) => {
+    // Step 1: resolve the code, create the couple doc, and set coupleId on
+    // YOUR OWN profile — all in one transaction (isMe() covers your own doc,
+    // so this part doesn't depend on the couple doc being readable yet).
+    const partnerUid = await runTransaction(db, async (tx) => {
       const codeSnap = await tx.get(codeRef)
       if (!codeSnap.exists()) {
         throw new Error("That code doesn't match anyone. Double check and try again.")
       }
-      const partnerUid = codeSnap.data().uid
-      if (partnerUid === firebaseUser.uid) {
+      const uid = codeSnap.data().uid
+      if (uid === firebaseUser.uid) {
         throw new Error("That's your own code — ask your partner for theirs.")
       }
 
       tx.set(coupleRef, {
-        members: [firebaseUser.uid, partnerUid],
+        members: [firebaseUser.uid, uid],
         createdAt: serverTimestamp(),
       })
       tx.set(doc(db, 'users', firebaseUser.uid), { coupleId: coupleRef.id }, { merge: true })
-      tx.set(doc(db, 'users', partnerUid), { coupleId: coupleRef.id }, { merge: true })
+      return uid
     })
+
+    // Step 2: set coupleId on your PARTNER's profile. This has to happen
+    // *after* step 1 commits — the canLinkPartner() rule needs to read the
+    // couple doc to approve this write, and security rules can't see writes
+    // made earlier in the same transaction until it's actually committed.
+    await setDoc(doc(db, 'users', partnerUid), { coupleId: coupleRef.id }, { merge: true })
   }
 
   // Leave the shared couple space. If your partner already left (or there
