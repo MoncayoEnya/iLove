@@ -2,12 +2,9 @@ import {
   collection,
   doc,
   getDoc,
-  getDocs,
-  query,
   runTransaction,
   serverTimestamp,
   setDoc,
-  where,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
@@ -33,6 +30,16 @@ export function useLinkCouple() {
       lastCheckinDate: null,
       createdAt: serverTimestamp(),
     })
+    // Small lookup doc, keyed by the code itself, so joining can find the
+    // space with a direct getDoc() instead of a where() query. Firestore
+    // rules can only safely gate a *query* using fields in the query's
+    // own where() clause — since we'd otherwise need to check `members`
+    // (not part of the where clause), Firestore rejects that query
+    // outright before it even runs. A direct-by-ID getDoc() doesn't have
+    // that restriction, so this sidesteps the problem entirely.
+    await setDoc(doc(db, 'inviteCodes', code), {
+      coupleId: coupleRef.id,
+    })
     await setDoc(
       doc(db, 'users', firebaseUser.uid),
       { coupleId: coupleRef.id },
@@ -43,21 +50,24 @@ export function useLinkCouple() {
 
   // Join an existing couple using their invite code
   async function joinWithCode(code) {
-    const q = query(collection(db, 'couples'), where('inviteCode', '==', code.toUpperCase()))
-    const snap = await getDocs(q)
-    if (snap.empty) throw new Error("That code doesn't match anything. Double check it.")
-    const coupleDoc = snap.docs[0]
+    const upperCode = code.toUpperCase()
+    const lookupSnap = await getDoc(doc(db, 'inviteCodes', upperCode))
+    if (!lookupSnap.exists()) {
+      throw new Error("That code doesn't match anything. Double check it.")
+    }
+    const coupleId = lookupSnap.data().coupleId
+    const coupleRef = doc(db, 'couples', coupleId)
 
     await runTransaction(db, async (tx) => {
-      const freshSnap = await tx.get(coupleDoc.ref)
+      const freshSnap = await tx.get(coupleRef)
       const data = freshSnap.data()
       if (data.members.includes(firebaseUser.uid)) return
       if (data.members.length >= 2) throw new Error('That space is already full.')
-      tx.update(coupleDoc.ref, { members: [...data.members, firebaseUser.uid] })
-      tx.set(doc(db, 'users', firebaseUser.uid), { coupleId: coupleDoc.id }, { merge: true })
+      tx.update(coupleRef, { members: [...data.members, firebaseUser.uid] })
+      tx.set(doc(db, 'users', firebaseUser.uid), { coupleId }, { merge: true })
     })
 
-    return coupleDoc.id
+    return coupleId
   }
 
   return { createSpace, joinWithCode }

@@ -1,6 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function isSignedIn() {
       return request.auth != null;
     }
@@ -24,33 +25,49 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // inviteCodes/{code} — tiny lookup mapping a 6-char code to a coupleId.
+    // joinWithCode() reads this by exact document ID (a direct getDoc),
+    // not a query — that's the key fix. Firestore can only allow a *query*
+    // (where() filter) when the security rule can be proven true using
+    // just the fields in that filter. Our couples read rule depends on
+    // `members`, which isn't part of any where() clause, so Firestore was
+    // rejecting that query outright, regardless of the actual document's
+    // data. A direct-by-ID lookup like this one doesn't have that
+    // restriction, so it works.
+    match /inviteCodes/{code} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
     // couples/{coupleId} — the shared space for a linked pair
     match /couples/{coupleId} {
-      // THE FIX: you can read a couple doc if you're already a member, OR if
-      // the space isn't full yet (< 2 members). That second clause is what
-      // useLinkCouple.js's joinWithCode() needs — it queries
-      // where('inviteCode', '==', code) to find the space *before* you're a
-      // member of it, and Firestore rejects the whole query if the read rule
-      // would fail for the one matching doc. This is still safe: to actually
-      // get a result back, the query needs the exact 6-character code, so
-      // this doesn't expose the couples collection to browsing.
+      // You can read a couple doc if you're already a member, OR if the
+      // space isn't full yet (< 2 members). That second clause is what
+      // joinWithCode() needs — after looking up the coupleId via
+      // inviteCodes/{code}, it does a direct getDoc() on this couple doc
+      // *before* the caller is a member of it.
       allow read: if isSignedIn() &&
         (request.auth.uid in resource.data.members || resource.data.members.size() < 2);
 
       // Creating a space: the creator must be a member of the new doc.
       allow create: if isSignedIn() && request.auth.uid in request.resource.data.members;
+
       // Joining: caller must already be a member OR be the one being added,
       // and the space must not already be full.
       allow update: if isSignedIn() &&
         (request.auth.uid in resource.data.members ||
           (request.auth.uid in request.resource.data.members &&
            resource.data.members.size() < 2));
+
       // Allow deleting the couple doc once you're down to the last member
       // (matches the unlink flow in AuthContext.jsx, which deletes the doc
       // when `members` would become empty).
       allow delete: if isSignedIn() &&
         request.auth.uid in resource.data.members &&
         resource.data.members.size() <= 1;
+
       // Every sub-collection (tasks, events, messages, jar, checkins,
       // recurringSeries, memories...) is only readable/writable by the
       // two linked partners.
