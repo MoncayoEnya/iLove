@@ -32,7 +32,7 @@ export default function LinkPartner() {
     setBusy(true)
     try {
       await joinWithCode(joinCode)
-      navigate('/')
+      navigate('/dashboard')
     } catch (e) {
       setErr(e.message)
     } finally {
@@ -70,7 +70,7 @@ export default function LinkPartner() {
             {generated}
           </div>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/dashboard')}
             className="w-full py-3 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep"
           >
             I've sent it — continue

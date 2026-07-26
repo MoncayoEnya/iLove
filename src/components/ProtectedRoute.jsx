@@ -31,7 +31,7 @@ export default function ProtectedRoute({ children, requireCouple = true }) {
     return <div className="min-h-screen flex items-center justify-center text-plum">Setting things up…</div>
   }
   if (requireCouple === true && !profile.coupleId) return <Navigate to="/link" replace />
-  if (requireCouple === false && profile.coupleId) return <Navigate to="/" replace />
+  if (requireCouple === false && profile.coupleId) return <Navigate to="/dashboard" replace />
 
   return children
 }

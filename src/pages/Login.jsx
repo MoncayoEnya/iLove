@@ -17,7 +17,7 @@ export default function Login() {
     setBusy(true)
     try {
       await login({ email, password })
-      navigate('/')
+      navigate('/dashboard')
     } catch (e) {
       setErr('Email and password did not match anything we have.')
     } finally {

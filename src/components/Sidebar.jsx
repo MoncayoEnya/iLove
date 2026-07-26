@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 const items = [
-  ['/', '◆', 'Dashboard'],
+  ['/dashboard', '◆', 'Dashboard'],
   ['/chat', '✉', 'Chat'],
   ['/tasks', '✓', 'Tasks'],
   ['/calendar', '▤', 'Calendar'],
@@ -74,7 +74,7 @@ export default function Sidebar() {
               to={to}
               icon={icon}
               label={label}
-              end={to === '/'}
+              end={to === '/dashboard'}
               onClick={() => setMobileOpen(false)}
             />
           ))}
@@ -107,7 +107,7 @@ export default function Sidebar() {
 
         <nav className="mt-8 flex flex-col gap-1 flex-1">
           {items.map(([to, icon, label]) => (
-            <NavItem key={to} to={to} icon={icon} label={label} end={to === '/'} />
+            <NavItem key={to} to={to} icon={icon} label={label} end={to === '/dashboard'} />
           ))}
 
           <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-1">
