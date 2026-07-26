@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { addDoc, collection, onSnapshot } from 'firebase/firestore'
+import { FiHeart } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
@@ -75,9 +76,9 @@ export default function LoveJar() {
           </div>
           <button
             onClick={openJar}
-            className="w-full py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep"
+            className="w-full py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep flex items-center justify-center gap-1.5"
           >
-            Open Love Jar ❤️
+            <FiHeart size={14} fill="currentColor" /> Open love jar
           </button>
         </div>
       </div>

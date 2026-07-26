@@ -10,6 +10,15 @@ import {
   runTransaction,
   where,
 } from 'firebase/firestore'
+import {
+  FiArrowRight,
+  FiCalendar,
+  FiCamera,
+  FiCheckSquare,
+  FiGift,
+  FiHeart,
+  FiSmile,
+} from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
@@ -135,7 +144,7 @@ export default function Dashboard() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold mb-1">Hi {profile.displayName} 🌷</h1>
+        <h1 className="text-2xl font-semibold mb-1">Hi {profile.displayName}</h1>
         <p className="text-sm text-[#7a6a7c]">
           {!hasPartner
             ? 'Waiting for your partner to join with your invite code.'
@@ -146,9 +155,11 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white border border-black/10 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold">😊 Daily check-in</h3>
-            <Link to="/checkins" className="text-xs text-peach font-semibold">
-              History →
+            <h3 className="font-semibold flex items-center gap-2">
+              <FiSmile size={16} className="text-peach" /> Daily check-in
+            </h3>
+            <Link to="/checkins" className="text-xs text-peach font-semibold flex items-center gap-1">
+              History <FiArrowRight size={12} />
             </Link>
           </div>
           {myCheckin ? (
@@ -210,9 +221,10 @@ export default function Dashboard() {
                 <button
                   onClick={() => photoInputRef.current?.click()}
                   disabled={photoLoading}
-                  className="text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
+                  className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
                 >
-                  {photoLoading ? 'Adding photo...' : photoData ? '📷 Change photo' : '📷 Add a photo (optional)'}
+                  <FiCamera size={14} />
+                  {photoLoading ? 'Adding photo...' : photoData ? 'Change photo' : 'Add a photo (optional)'}
                 </button>
                 {photoData && (
                   <button
@@ -239,7 +251,9 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3">✓ Today's tasks</h3>
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <FiCheckSquare size={16} className="text-peach" /> Today's tasks
+          </h3>
           {tasks.length === 0 ? (
             <div className="text-sm text-[#a892a9]">Nothing open — nice.</div>
           ) : (
@@ -255,7 +269,9 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3">▤ Coming up</h3>
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <FiCalendar size={16} className="text-peach" /> Coming up
+          </h3>
           {events.length === 0 ? (
             <div className="text-sm text-[#a892a9]">Nothing planned yet.</div>
           ) : (
@@ -274,7 +290,9 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3">💍 Anniversary</h3>
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <FiGift size={16} className="text-peach" /> Anniversary
+          </h3>
           {!anniversary ? (
             <div className="text-sm text-[#a892a9]">
               Add your anniversary date on your{' '}
@@ -284,8 +302,8 @@ export default function Dashboard() {
               to see the countdown here.
             </div>
           ) : anniversary.daysUntil === 0 ? (
-            <div className="text-sm">
-              🎉 Happy anniversary! {anniversary.years} year{anniversary.years === 1 ? '' : 's'} together today.
+            <div className="text-sm font-semibold text-peach">
+              Happy anniversary! {anniversary.years} year{anniversary.years === 1 ? '' : 's'} together today.
             </div>
           ) : (
             <div className="text-sm">
@@ -298,7 +316,9 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3">❤ Latest from the love jar</h3>
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <FiHeart size={16} className="text-peach" /> Latest from the love jar
+          </h3>
           {!lastJarNote ? (
             <div className="text-sm text-[#a892a9]">No notes saved yet.</div>
           ) : (

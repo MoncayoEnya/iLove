@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { FiAward, FiMinus, FiPlus } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
@@ -87,15 +88,15 @@ export default function Goals() {
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setProgress(g, (g.progress || 0) - 10)}
-                  className="w-7 h-7 rounded-lg border border-black/10 text-sm"
+                  className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center"
                 >
-                  −
+                  <FiMinus size={13} />
                 </button>
                 <button
                   onClick={() => setProgress(g, (g.progress || 0) + 10)}
-                  className="w-7 h-7 rounded-lg border border-black/10 text-sm"
+                  className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center"
                 >
-                  +
+                  <FiPlus size={13} />
                 </button>
                 <button
                   onClick={() => setProgress(g, 100)}
@@ -144,7 +145,9 @@ export default function Goals() {
 
       {completedGoals.length > 0 && (
         <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3">Achieved 🎉</h3>
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <FiAward size={16} className="text-peach" /> Achieved
+          </h3>
           {completedGoals.map((g) => (
             <div key={g.id} className="flex items-center justify-between py-2 border-b border-black/10 last:border-b-0">
               <span className="line-through opacity-50">{g.title}</span>

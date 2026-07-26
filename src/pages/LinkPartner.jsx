@@ -42,7 +42,7 @@ export default function LinkPartner() {
 
   return (
     <AuthCard>
-      <h2 className="font-serif text-lg mt-2 mb-1">Hi {profile?.displayName} 👋</h2>
+      <h2 className="font-serif text-lg mt-2 mb-1">Hi {profile?.displayName}</h2>
       <p className="text-sm text-[#9a8a9c] mb-1.5">Last step — link up with your partner.</p>
 
       {mode === 'choose' && !generated && (

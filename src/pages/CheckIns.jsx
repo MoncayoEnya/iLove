@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { FaFire } from 'react-icons/fa'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
@@ -88,7 +89,7 @@ export default function CheckIns() {
           </p>
         </div>
         <div className="flex items-center gap-1.5 bg-peach/10 rounded-full px-3.5 py-2 text-sm text-plum font-semibold w-fit">
-          🔥 {couple?.streak || 0} day streak
+          <FaFire size={13} /> {couple?.streak || 0} day streak
         </div>
       </div>
 

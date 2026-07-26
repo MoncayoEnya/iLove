@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { FiCheck } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
@@ -170,9 +171,9 @@ export default function Tasks() {
             <div key={t.id} className="flex items-start gap-2.5 py-2 border-b border-black/10 last:border-b-0">
               <div
                 onClick={() => toggle(t)}
-                className="w-5 h-5 rounded-md border border-ok bg-ok text-white flex items-center justify-center text-xs cursor-pointer mt-0.5 flex-shrink-0"
+                className="w-5 h-5 rounded-md border border-ok bg-ok text-white flex items-center justify-center cursor-pointer mt-0.5 flex-shrink-0"
               >
-                ✓
+                <FiCheck size={12} strokeWidth={3} />
               </div>
               <div className="flex-1">
                 <div className="line-through opacity-50">{t.text}</div>

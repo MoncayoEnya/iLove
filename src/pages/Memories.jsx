@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { FiCamera } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
@@ -93,9 +94,10 @@ export default function Memories() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={photoLoading}
-            className="text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
+            className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
           >
-            {photoLoading ? 'Adding photo...' : '📷 Choose a photo'}
+            <FiCamera size={14} />
+            {photoLoading ? 'Adding photo...' : 'Choose a photo'}
           </button>
         ) : (
           <img src={photoData} alt="Preview" className="rounded-xl max-h-64 object-cover" />

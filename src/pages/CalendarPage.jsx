@@ -12,6 +12,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
+import { FiBell, FiRepeat, FiX } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
@@ -34,7 +35,7 @@ const REMINDER_OPTIONS = [
   { value: '1440', label: '1 day before' },
 ]
 
-const RECUR_BADGE = { daily: '🔁 Daily', weekly: '🔁 Weekly', monthly: '🔁 Monthly', yearly: '🔁 Yearly' }
+const RECUR_BADGE = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' }
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10)
@@ -263,7 +264,9 @@ export default function CalendarPage() {
 
       {upcomingReminders.length > 0 && (
         <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
-          <h3 className="font-semibold mb-3">🔔 Upcoming reminders</h3>
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <FiBell size={16} className="text-peach" /> Upcoming reminders
+          </h3>
           <div className="flex flex-col gap-2">
             {upcomingReminders.map((ev) => (
               <div key={ev.id} className="flex items-center justify-between text-sm">
@@ -301,13 +304,14 @@ export default function CalendarPage() {
                     {ev.time && <span className="text-xs text-[#9a8a9c] font-normal">{ev.time}</span>}
                     {ev.title}
                     {ev.recurrence && (
-                      <span className="text-[10px] text-[#9a8a9c] font-normal border border-black/10 rounded-full px-2 py-0.5">
-                        {RECUR_BADGE[ev.recurrence]}
+                      <span className="flex items-center gap-1 text-[10px] text-[#9a8a9c] font-normal border border-black/10 rounded-full px-2 py-0.5">
+                        <FiRepeat size={10} /> {RECUR_BADGE[ev.recurrence]}
                       </span>
                     )}
                     {ev.reminder && (
-                      <span className="text-[10px] text-[#9a8a9c] font-normal border border-black/10 rounded-full px-2 py-0.5">
-                        🔔 {REMINDER_OPTIONS.find((r) => r.value === String(ev.reminder.minutesBefore))?.label}
+                      <span className="flex items-center gap-1 text-[10px] text-[#9a8a9c] font-normal border border-black/10 rounded-full px-2 py-0.5">
+                        <FiBell size={10} />{' '}
+                        {REMINDER_OPTIONS.find((r) => r.value === String(ev.reminder.minutesBefore))?.label}
                       </span>
                     )}
                   </div>
@@ -341,10 +345,10 @@ export default function CalendarPage() {
                 ) : (
                   <button
                     onClick={() => setConfirmingDelete(ev.id)}
-                    className="text-xs text-[#9a8a9c] hover:text-[#9b3b3b] px-2 py-1 whitespace-nowrap"
+                    className="text-[#9a8a9c] hover:text-[#9b3b3b] px-2 py-1"
                     title="Delete"
                   >
-                    ✕
+                    <FiX size={14} />
                   </button>
                 )}
               </div>

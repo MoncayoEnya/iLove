@@ -11,6 +11,7 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore'
+import { FiCamera, FiSearch, FiSmile } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
@@ -181,9 +182,13 @@ export default function Chat() {
             setSearchOpen((v) => !v)
             if (searchOpen) setSearchTerm('')
           }}
-          className="px-3.5 py-2 rounded-xl border border-black/10 text-sm font-semibold whitespace-nowrap"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-black/10 text-sm font-semibold whitespace-nowrap"
         >
-          {searchOpen ? 'Close search' : '🔍 Search'}
+          {searchOpen ? 'Close search' : (
+            <>
+              <FiSearch size={14} /> Search
+            </>
+          )}
         </button>
       </div>
 
@@ -208,7 +213,7 @@ export default function Chat() {
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-2.5">
           {visibleMessages.length === 0 && (
             <div className="text-sm text-[#a892a9]">
-              {searchTerm.trim() ? 'No messages match that search.' : 'Say hi 👋'}
+              {searchTerm.trim() ? 'No messages match that search.' : 'Say hi.'}
             </div>
           )}
 
@@ -244,10 +249,10 @@ export default function Chat() {
                     onClick={() => setPickerOpenFor(pickerOpenFor === m.id ? null : m.id)}
                     className={`absolute top-0 ${
                       mine ? '-left-8' : '-right-8'
-                    } opacity-0 group-hover:opacity-100 transition-opacity text-xs w-6 h-6 rounded-full border border-black/10 bg-white flex items-center justify-center`}
+                    } opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full border border-black/10 bg-white flex items-center justify-center text-[#9a8a9c]`}
                     title="React"
                   >
-                    🙂
+                    <FiSmile size={13} />
                   </button>
 
                   {pickerOpenFor === m.id && (
@@ -321,10 +326,14 @@ export default function Chat() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploadingImage}
-            className="w-10 h-10 flex-shrink-0 rounded-xl border border-black/10 flex items-center justify-center text-lg disabled:opacity-50"
+            className="w-10 h-10 flex-shrink-0 rounded-xl border border-black/10 flex items-center justify-center text-[#7a6a7c] disabled:opacity-50"
             title="Send an image"
           >
-            {uploadingImage ? '…' : '📷'}
+            {uploadingImage ? (
+              <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+            ) : (
+              <FiCamera size={16} />
+            )}
           </button>
           <input
             className="flex-1 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"

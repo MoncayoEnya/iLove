@@ -1,34 +1,44 @@
 import { Link, Navigate } from 'react-router-dom'
+import {
+  FiCalendar,
+  FiCheckSquare,
+  FiHeart,
+  FiImage,
+  FiMessageCircle,
+  FiTarget,
+} from 'react-icons/fi'
+import { FaFire } from 'react-icons/fa'
 import { useAuth } from '../context/AuthContext'
+import Logo from '../components/Logo'
 
 const FEATURES = [
   {
-    icon: '✉',
+    icon: FiMessageCircle,
     title: 'Chat',
     body: "A thread that's just yours — for the things that don't fit in a text.",
   },
   {
-    icon: '✓',
+    icon: FiCheckSquare,
     title: 'Shared tasks',
     body: 'Split the errands and the chores so nothing quietly lands on one person.',
   },
   {
-    icon: '▤',
+    icon: FiCalendar,
     title: 'Calendar',
     body: 'Date nights, appointments, anniversaries — one calendar, both names on it.',
   },
   {
-    icon: '❤',
+    icon: FiHeart,
     title: 'Love jar',
     body: 'Drop in a note whenever something they did stuck with you. Read them back later.',
   },
   {
-    icon: '🖼',
+    icon: FiImage,
     title: 'Memories',
     body: 'The photo from that trip. The one from the bad apartment. All in one place.',
   },
   {
-    icon: '★',
+    icon: FiTarget,
     title: 'Goals',
     body: 'The things you keep saying "we should really do that" about. Write them down.',
   },
@@ -77,9 +87,7 @@ export default function Landing() {
       {/* ---------- Nav ---------- */}
       <header className="max-w-[1100px] mx-auto flex items-center justify-between px-6 py-6">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-peach to-gold flex items-center justify-center text-plumdeep text-sm flex-shrink-0">
-            ❤
-          </div>
+          <Logo />
           <span className="font-serif text-xl font-semibold">iLove</span>
         </div>
         <div className="flex items-center gap-3">
@@ -144,7 +152,7 @@ export default function Landing() {
               "i still think about that terrible motel we stayed in lol"
             </div>
             <div className="absolute -bottom-2 right-2 md:right-10 flex items-center gap-1.5 bg-peach/15 border border-peach/30 rounded-full px-3.5 py-2 text-sm text-peachsoft font-semibold">
-              🔥 14 day streak
+              <FaFire size={13} /> 14 day streak
             </div>
           </div>
         </div>
@@ -166,8 +174,8 @@ export default function Landing() {
               key={f.title}
               className="bg-white rounded-2xl p-6 border border-black/5 hover:-translate-y-1 hover:shadow-lg transition-all"
             >
-              <div className="w-10 h-10 rounded-full bg-blush flex items-center justify-center text-plumdeep text-base mb-4">
-                {f.icon}
+              <div className="w-10 h-10 rounded-full bg-blush flex items-center justify-center text-plumdeep mb-4">
+                <f.icon size={18} strokeWidth={2} />
               </div>
               <div className="font-serif text-lg font-semibold">{f.title}</div>
               <p className="text-sm text-[#7a6a7c] mt-1.5 leading-relaxed">{f.body}</p>
@@ -218,9 +226,7 @@ export default function Landing() {
       {/* ---------- Footer ---------- */}
       <footer className="max-w-[1100px] mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-[#9a8a9c]">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-peach to-gold flex items-center justify-center text-plumdeep text-xs flex-shrink-0">
-            ❤
-          </div>
+          <Logo size="sm" />
           <span className="font-serif font-semibold text-ink">iLove</span>
         </div>
         <div>Made for two people at a time.</div>
