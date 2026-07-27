@@ -11,12 +11,14 @@ import {
   FiSmile,
   FiTarget,
   FiUser,
+  FiUsers,
   FiX,
 } from 'react-icons/fi'
 import { FaFire } from 'react-icons/fa'
 import { useAuth } from '../context/AuthContext'
 import { useUIStore } from '../store/uiStore'
 import Logo from './Logo'
+import ThemeToggle from './ThemeToggle'
 
 const items = [
   ['/dashboard', FiHome, 'Dashboard'],
@@ -27,6 +29,7 @@ const items = [
   ['/jar', FiHeart, 'Love jar'],
   ['/memories', FiImage, 'Memories'],
   ['/goals', FiTarget, 'Goals'],
+  ['/conflict', FiUsers, 'Conflict recovery'],
 ]
 
 const secondaryItems = [
@@ -78,6 +81,7 @@ export default function Sidebar() {
           <span className="flex items-center gap-1 text-xs text-peachsoft font-semibold bg-peach/10 rounded-full px-2.5 py-1.5">
             <FaFire size={12} /> {couple?.streak || 0}
           </span>
+          <ThemeToggle />
           <button
             onClick={() => setMobileOpen((o) => !o)}
             aria-label="Toggle menu"
@@ -119,8 +123,11 @@ export default function Sidebar() {
           <span className="font-serif text-xl font-semibold">iLove</span>
         </div>
 
-        <div className="mt-3 flex items-center gap-1.5 bg-peach/10 rounded-full px-3 py-2 text-sm text-peachsoft font-semibold w-fit">
-          <FaFire size={13} /> {couple?.streak || 0} day streak
+        <div className="mt-3 flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-peach/10 rounded-full px-3 py-2 text-sm text-peachsoft font-semibold w-fit">
+            <FaFire size={13} /> {couple?.streak || 0} day streak
+          </div>
+          <ThemeToggle />
         </div>
 
         <nav className="mt-8 flex flex-col gap-1 flex-1">

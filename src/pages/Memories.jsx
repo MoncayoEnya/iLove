@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 import { ClipLoader } from 'react-spinners'
-import { FiCamera } from 'react-icons/fi'
+import { FiCamera, FiImage } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
 import { compressImage } from '../utils/compressImage'
 import CropModal from '../components/CropModal'
+import EmptyState from '../components/EmptyState'
 
 export default function Memories() {
   const { firebaseUser, couple } = useAuth()
@@ -178,7 +179,11 @@ export default function Memories() {
       </div>
 
       {memories.length === 0 ? (
-        <div className="text-sm text-[#a892a9]">No memories saved yet — add your first one above.</div>
+        <EmptyState
+          icon={FiImage}
+          title="No memories saved yet"
+          subtitle="Add your first photo above — the little moments are worth keeping."
+        />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {memories.map((m) => (

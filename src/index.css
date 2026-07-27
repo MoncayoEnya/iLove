@@ -9,3 +9,86 @@ body {
 .jar-note {
   @apply bg-blush rounded-xl p-4 font-serif italic text-plumdeep text-center;
 }
+
+/* ---------------------------------------------------------------------
+   Dark mode. Rather than hand-adding `dark:` variants to every component
+   (this app doesn't have a tailwind.config.js with darkMode:'class' set,
+   and every page hardcodes the same handful of color utilities), we
+   override those utility classes directly whenever `html` has the
+   `.dark` class. ThemeContext toggles that class and persists the choice.
+   ------------------------------------------------------------------- */
+
+html.dark body {
+  background-color: #1c1420;
+  color: #f2e6ef;
+}
+
+html.dark .bg-paper {
+  background-color: #1c1420;
+}
+
+html.dark .text-ink {
+  color: #f2e6ef;
+}
+
+/* Card surfaces */
+html.dark .bg-white {
+  background-color: #26192b;
+}
+
+html.dark .bg-\[\#faf6f8\] {
+  background-color: #221a26;
+}
+
+/* Borders */
+html.dark .border-black\/10,
+html.dark .border-black\/5 {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .hover\:bg-black\/5:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Muted / secondary text used throughout for subtitles, hints, timestamps */
+html.dark .text-\[\#9a8a9c\] { color: #b6a4b8; }
+html.dark .text-\[\#7a6a7c\] { color: #c7b5c9; }
+html.dark .text-\[\#a892a9\] { color: #b6a0b8; }
+html.dark .text-\[\#6b5a6d\] { color: #d0bed2; }
+html.dark .text-\[\#d9c6da\] { color: #e4d3e6; }
+
+/* Status colors (errors, success) */
+html.dark .text-\[\#9b3b3b\] { color: #ff9d9d; }
+html.dark .text-\[\#2f6d3f\] { color: #7fd08f; }
+html.dark .text-\[\#7fae7f\] { color: #8fd08f; }
+html.dark .text-\[\#d97a6a\] { color: #ff9d86; }
+
+html.dark .bg-\[\#fbe4e4\] { background-color: #3d2424; }
+html.dark .border-\[\#e5b7b7\] { border-color: #5c3535; }
+html.dark .hover\:bg-\[\#fbe4e4\]:hover { background-color: #4a2a2a; }
+html.dark .bg-\[\#9b3b3b\] { background-color: #7a2f2f; }
+
+/* Appreciation-note pill (bg-blush / text-plum badges, jar-note) */
+html.dark .bg-blush { background-color: #3a2438; }
+html.dark .text-plum { color: #f0c9e6; }
+html.dark .jar-note { color: #f2e6ef; }
+
+/* Form controls: browser defaults to a white background, which needs an
+   explicit override since most inputs in this app don't set one. */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #201526;
+  color: #f2e6ef;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #7d6b80;
+}
+
+html.dark .divide-black\/10 > * + *,
+html.dark .bg-black\/10 {
+  background-color: rgba(255, 255, 255, 0.1);
+}

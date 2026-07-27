@@ -13,13 +13,14 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
-import { FiBell, FiRepeat, FiX } from 'react-icons/fi'
+import { FiBell, FiCalendar, FiRepeat, FiX } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
 import { todayStr } from '../utils/date'
 import MonthCalendarGrid from '../components/MonthCalendarGrid'
 import DayDetailPanel from '../components/DayDetailPanel'
+import EmptyState from '../components/EmptyState'
 
 // Firestore returns Timestamp objects for fields written with
 // serverTimestamp()/new Date(). This normalizes either shape to 'YYYY-MM-DD'
@@ -363,7 +364,11 @@ export default function CalendarPage() {
       <div className="bg-white border border-black/10 rounded-2xl p-5">
         <h3 className="font-semibold mb-3">All events</h3>
         {sortedDates.length === 0 && (
-          <div className="text-sm text-[#a892a9] py-2.5">Nothing on the calendar yet.</div>
+          <EmptyState
+            icon={FiCalendar}
+            title="Nothing on the calendar yet"
+            subtitle="Plan a date night, an anniversary reminder, or anything worth marking — add it below."
+          />
         )}
 
         {sortedDates.map((d) => (

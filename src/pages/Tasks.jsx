@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import toast from 'react-hot-toast'
-import { FiCheck } from 'react-icons/fi'
+import { FiCheck, FiCheckSquare, FiFilter } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { useMemberNames } from '../hooks/useMemberNames'
 import { todayStr } from '../utils/date'
 import { useUIStore } from '../store/uiStore'
+import EmptyState from '../components/EmptyState'
 
 export default function Tasks() {
   const { firebaseUser, couple } = useAuth()
@@ -123,9 +124,15 @@ export default function Tasks() {
           </div>
         </div>
         {openTasks.length === 0 && (
-          <div className="text-sm text-[#a892a9] py-2.5">
-            {taskFilter === 'all' ? 'No open tasks — add one below.' : 'No tasks match this filter.'}
-          </div>
+          taskFilter === 'all' ? (
+            <EmptyState
+              icon={FiCheckSquare}
+              title="No open tasks"
+              subtitle="Add something you need to handle together — big or small — below."
+            />
+          ) : (
+            <EmptyState icon={FiFilter} title="No tasks match this filter" />
+          )
         )}
         {openTasks.map((t) => {
           const overdue = t.dueDate && t.dueDate < todayStr()

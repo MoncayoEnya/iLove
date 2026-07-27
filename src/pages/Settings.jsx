@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { doc, setDoc } from 'firebase/firestore'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
+import { FiMoon, FiSun } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import { usePartner } from '../hooks/usePartner'
 import { useLinkCouple } from '../hooks/useLinkCouple'
 import { joinCodeSchema, zodResolver } from '../lib/schemas'
@@ -18,6 +20,7 @@ const NOTIF_OPTIONS = [
 
 export default function Settings() {
   const { firebaseUser, profile, couple, resetPassword, unlinkPartner, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const { partner, hasPartner } = usePartner()
   const { createSpace, joinWithCode } = useLinkCouple()
   const navigate = useNavigate()
@@ -155,6 +158,32 @@ export default function Settings() {
             </div>
           )}
           {resetError && <div className="text-sm text-[#9b3b3b] mt-2.5">{resetError}</div>}
+        </div>
+
+        {/* Appearance */}
+        <div className="bg-white border border-black/10 rounded-2xl p-5">
+          <h3 className="font-semibold mb-1">Appearance</h3>
+          <p className="text-xs text-[#9a8a9c] mb-4">Switch between light and dark theme.</p>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 text-sm">
+              {theme === 'dark' ? <FiMoon size={15} /> : <FiSun size={15} />}
+              {theme === 'dark' ? 'Dark mode' : 'Light mode'}
+            </span>
+            <button
+              onClick={toggleTheme}
+              role="switch"
+              aria-checked={theme === 'dark'}
+              className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+                theme === 'dark' ? 'bg-peach' : 'bg-black/15'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                  theme === 'dark' ? 'translate-x-[22px]' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
         </div>
 
         {/* Notifications */}

@@ -5,6 +5,7 @@ import { FiHeart } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
+import EmptyState from '../components/EmptyState'
 
 export default function LoveJar() {
   const { firebaseUser, couple } = useAuth()
@@ -70,12 +71,18 @@ export default function LoveJar() {
 
         <div className="bg-white border border-black/10 rounded-2xl p-5">
           <h3 className="font-semibold mb-3">Open the jar</h3>
-          <div className="text-center py-6">
+          <div className={notes.length === 0 && !revealed ? 'text-center' : 'text-center py-6'}>
             {revealed ? (
               <>
                 <div className="jar-note">"{revealed.text}"</div>
                 <div className="text-sm text-[#9a8a9c] mt-2.5">— {names[revealed.from] || '...'}</div>
               </>
+            ) : notes.length === 0 ? (
+              <EmptyState
+                icon={FiHeart}
+                title="The jar is empty"
+                subtitle="Drop in the first appreciation note — you'll be able to reveal a random one here anytime."
+              />
             ) : (
               <div className="text-sm text-[#9a8a9c]">
                 {notes.length} note{notes.length === 1 ? '' : 's'} saved so far
@@ -84,7 +91,8 @@ export default function LoveJar() {
           </div>
           <button
             onClick={openJar}
-            className="w-full py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep flex items-center justify-center gap-1.5"
+            disabled={notes.length === 0}
+            className="w-full py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             <FiHeart size={14} fill="currentColor" /> Open love jar
           </button>

@@ -17,6 +17,7 @@ import CalendarPage from './pages/CalendarPage'
 import LoveJar from './pages/LoveJar'
 import Memories from './pages/Memories'
 import Goals from './pages/Goals'
+import ConflictRecovery from './pages/ConflictRecovery'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
 import { useLocalReminders } from './hooks/useLocalReminders'
@@ -146,6 +147,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <Goals />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/conflict"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <ConflictRecovery />
             </AppLayout>
           </ProtectedRoute>
         }

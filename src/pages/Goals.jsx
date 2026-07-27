@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { FiAward, FiMinus, FiPlus } from 'react-icons/fi'
+import { FiAward, FiMinus, FiPlus, FiTarget } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
+import EmptyState from '../components/EmptyState'
 
 export default function Goals() {
   const { firebaseUser, couple } = useAuth()
@@ -107,7 +108,11 @@ export default function Goals() {
       <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
         <h3 className="font-semibold mb-3">In progress</h3>
         {activeGoals.length === 0 && (
-          <div className="text-sm text-[#a892a9] py-2.5">No goals yet — add one below.</div>
+          <EmptyState
+            icon={FiTarget}
+            title="No goals yet"
+            subtitle="Add something you're working toward together — saving up, a trip, a habit — below."
+          />
         )}
         {activeGoals.map((g) => (
           <div key={g.id} className="py-3.5 border-b border-black/10 last:border-b-0">

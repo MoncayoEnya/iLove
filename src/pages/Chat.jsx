@@ -11,11 +11,12 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore'
-import { FiCamera, FiSearch, FiSmile } from 'react-icons/fi'
+import { FiCamera, FiMessageCircle, FiSearch, FiSmile } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { compressImage } from '../utils/compressImage'
+import EmptyState from '../components/EmptyState'
 
 const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '👍', '🔥']
 const TYPING_TIMEOUT_MS = 2000
@@ -212,9 +213,15 @@ export default function Chat() {
       <div className="bg-white border border-black/10 rounded-2xl flex flex-col h-[calc(100vh-260px)] overflow-hidden">
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-2.5">
           {visibleMessages.length === 0 && (
-            <div className="text-sm text-[#a892a9]">
-              {searchTerm.trim() ? 'No messages match that search.' : 'Say hi.'}
-            </div>
+            searchTerm.trim() ? (
+              <EmptyState icon={FiSearch} title="No messages match that search" />
+            ) : (
+              <EmptyState
+                icon={FiMessageCircle}
+                title="Say hi."
+                subtitle="This is your space to check in, share your day, or just say you're thinking of them."
+              />
+            )
           )}
 
           {visibleMessages.map((m) => {

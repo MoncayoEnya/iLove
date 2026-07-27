@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import { FaFire } from 'react-icons/fa'
+import { FiSmile } from 'react-icons/fi'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { MOODS } from '../utils/moods'
 import { friendlyDate, lastNDays, todayStr, yesterdayStr } from '../utils/date'
+import EmptyState from '../components/EmptyState'
 
 function moodInfo(v) {
   return MOODS.find((m) => m.v === v)
@@ -187,8 +189,12 @@ export default function CheckIns() {
       {loading ? (
         <div className="text-sm text-[#a892a9]">Loading…</div>
       ) : sortedDates.length === 0 ? (
-        <div className="bg-white border border-black/10 rounded-2xl p-8 text-center text-sm text-[#a892a9]">
-          No check-ins yet. Once you check in from the dashboard, they'll show up here.
+        <div className="bg-white border border-black/10 rounded-2xl p-5">
+          <EmptyState
+            icon={FiSmile}
+            title="No check-ins yet"
+            subtitle="Once you check in from the dashboard, they'll show up here."
+          />
         </div>
       ) : (
         <div className="flex flex-col gap-4">
