@@ -427,6 +427,7 @@ export default function CalendarPage() {
                     onClick={() => setConfirmingDelete(ev.id)}
                     className="text-[#9a8a9c] hover:text-[#9b3b3b] px-2 py-1"
                     title="Delete"
+                    aria-label={`Delete ${ev.title || 'event'}`}
                   >
                     <FiX size={14} />
                   </button>

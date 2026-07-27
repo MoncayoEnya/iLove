@@ -10,6 +10,29 @@ body {
   @apply bg-blush rounded-xl p-4 font-serif italic text-plumdeep text-center;
 }
 
+/* Visible keyboard-focus ring on every interactive element. Mouse/touch
+   clicks don't trigger :focus-visible, so this only shows up for keyboard
+   and assistive-tech navigation. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #e8a87c;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+html.dark a:focus-visible,
+html.dark button:focus-visible,
+html.dark input:focus-visible,
+html.dark textarea:focus-visible,
+html.dark select:focus-visible,
+html.dark [tabindex]:focus-visible {
+  outline-color: #ffcf9e;
+}
+
 /* ---------------------------------------------------------------------
    Dark mode. Rather than hand-adding `dark:` variants to every component
    (this app doesn't have a tailwind.config.js with darkMode:'class' set,
@@ -91,4 +114,9 @@ html.dark textarea::placeholder {
 html.dark .divide-black\/10 > * + *,
 html.dark .bg-black\/10 {
   background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Skeleton loaders (components/Skeleton.jsx) */
+html.dark .bg-black\/\[0\.06\] {
+  background-color: rgba(255, 255, 255, 0.08);
 }

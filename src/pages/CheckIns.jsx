@@ -10,6 +10,7 @@ import { usePartner } from '../hooks/usePartner'
 import { MOODS } from '../utils/moods'
 import { friendlyDate, lastNDays, todayStr, yesterdayStr } from '../utils/date'
 import EmptyState from '../components/EmptyState'
+import { SkeletonList } from '../components/Skeleton'
 
 function moodInfo(v) {
   return MOODS.find((m) => m.v === v)
@@ -187,7 +188,7 @@ export default function CheckIns() {
 
       {/* ---- History feed ---- */}
       {loading ? (
-        <div className="text-sm text-[#a892a9]">Loading…</div>
+        <SkeletonList count={3} lines={2} />
       ) : sortedDates.length === 0 ? (
         <div className="bg-white border border-black/10 rounded-2xl p-5">
           <EmptyState

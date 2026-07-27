@@ -11,7 +11,17 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore'
-import { FiCamera, FiMessageCircle, FiSearch, FiSmile } from 'react-icons/fi'
+import toast from 'react-hot-toast'
+import {
+  FiBookmark,
+  FiCamera,
+  FiCornerUpLeft,
+  FiMessageCircle,
+  FiSearch,
+  FiSmile,
+  FiStar,
+  FiX,
+} from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
@@ -32,11 +42,15 @@ export default function Chat() {
   const [pickerOpenFor, setPickerOpenFor] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [imgError, setImgError] = useState('')
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [replyingTo, setReplyingTo] = useState(null)
+  const [savingMemoryFor, setSavingMemoryFor] = useState(null)
 
   const bottomRef = useRef(null)
   const fileInputRef = useRef(null)
+  const inputRef = useRef(null)
   const typingTimeoutRef = useRef(null)
   const readReceiptsSent = useRef(new Set())
 
@@ -101,12 +115,27 @@ export default function Chat() {
     typingTimeoutRef.current = setTimeout(() => setMyTyping(false), TYPING_TIMEOUT_MS)
   }
 
+  function startReply(message) {
+    setPickerOpenFor(null)
+    setReplyingTo(message)
+    inputRef.current?.focus()
+  }
+
   async function send() {
     const t = text.trim()
     if (!t || !coupleId) return
     setText('')
     clearTimeout(typingTimeoutRef.current)
     setMyTyping(false)
+    const replySnapshot = replyingTo
+      ? {
+          id: replyingTo.id,
+          from: replyingTo.from,
+          type: replyingTo.type,
+          text: replyingTo.type === 'image' ? '' : (replyingTo.text || ''),
+        }
+      : null
+    setReplyingTo(null)
     await addDoc(collection(db, 'couples', coupleId, 'messages'), {
       type: 'text',
       from: firebaseUser.uid,
@@ -114,6 +143,8 @@ export default function Chat() {
       createdAt: serverTimestamp(),
       readBy: [firebaseUser.uid],
       reactions: {},
+      favorites: {},
+      ...(replySnapshot ? { replyTo: replySnapshot } : {}),
     })
   }
 
@@ -129,6 +160,15 @@ export default function Chat() {
     setUploadingImage(true)
     try {
       const dataUrl = await compressImage(file)
+      const replySnapshot = replyingTo
+        ? {
+            id: replyingTo.id,
+            from: replyingTo.from,
+            type: replyingTo.type,
+            text: replyingTo.type === 'image' ? '' : (replyingTo.text || ''),
+          }
+        : null
+      setReplyingTo(null)
       await addDoc(collection(db, 'couples', coupleId, 'messages'), {
         type: 'image',
         from: firebaseUser.uid,
@@ -136,6 +176,8 @@ export default function Chat() {
         createdAt: serverTimestamp(),
         readBy: [firebaseUser.uid],
         reactions: {},
+        favorites: {},
+        ...(replySnapshot ? { replyTo: replySnapshot } : {}),
       })
     } catch (err) {
       setImgError(err.message)
@@ -153,6 +195,35 @@ export default function Chat() {
     })
   }
 
+  async function toggleFavorite(message) {
+    if (!coupleId) return
+    const mine = !!message.favorites?.[firebaseUser.uid]
+    await updateDoc(doc(db, 'couples', coupleId, 'messages', message.id), {
+      [`favorites.${firebaseUser.uid}`]: mine ? deleteField() : true,
+    })
+  }
+
+  async function saveAsMemory(message) {
+    if (!coupleId || message.type !== 'image' || savingMemoryFor) return
+    setSavingMemoryFor(message.id)
+    try {
+      await addDoc(collection(db, 'couples', coupleId, 'memories'), {
+        photoData: message.imageData,
+        caption: '',
+        from: firebaseUser.uid,
+        createdAt: new Date(),
+      })
+      await updateDoc(doc(db, 'couples', coupleId, 'messages', message.id), {
+        savedAsMemory: true,
+      })
+      toast.success('Saved to Memories.')
+    } catch (e) {
+      toast.error("Couldn't save that — try again.")
+    } finally {
+      setSavingMemoryFor(null)
+    }
+  }
+
   function groupedReactions(reactions) {
     const groups = {}
     Object.entries(reactions || {}).forEach(([uid, emoji]) => {
@@ -162,11 +233,23 @@ export default function Chat() {
     return groups
   }
 
+  function scrollToMessage(id) {
+    const el = document.getElementById(`msg-${id}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('ring-2', 'ring-peach')
+    setTimeout(() => el.classList.remove('ring-2', 'ring-peach'), 1200)
+  }
+
   const visibleMessages = useMemo(() => {
-    if (!searchTerm.trim()) return messages
-    const q = searchTerm.trim().toLowerCase()
-    return messages.filter((m) => m.type === 'text' && m.text?.toLowerCase().includes(q))
-  }, [messages, searchTerm])
+    let list = messages
+    if (favoritesOnly) list = list.filter((m) => m.favorites?.[firebaseUser.uid])
+    if (searchTerm.trim()) {
+      const q = searchTerm.trim().toLowerCase()
+      list = list.filter((m) => m.type === 'text' && m.text?.toLowerCase().includes(q))
+    }
+    return list
+  }, [messages, searchTerm, favoritesOnly, firebaseUser.uid])
 
   const lastMine = [...messages].reverse().find((m) => m.from === firebaseUser.uid)
   const lastMineSeen = lastMine && partnerUid && (lastMine.readBy || []).includes(partnerUid)
@@ -178,19 +261,32 @@ export default function Chat() {
           <h1 className="text-2xl font-semibold mb-1">Chat</h1>
           <p className="text-sm text-[#7a6a7c]">Just between you and {partner?.displayName || 'your partner'}.</p>
         </div>
-        <button
-          onClick={() => {
-            setSearchOpen((v) => !v)
-            if (searchOpen) setSearchTerm('')
-          }}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-black/10 text-sm font-semibold whitespace-nowrap"
-        >
-          {searchOpen ? 'Close search' : (
-            <>
-              <FiSearch size={14} /> Search
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setFavoritesOnly((v) => !v)}
+            aria-pressed={favoritesOnly}
+            title="Show favorites only"
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-sm font-semibold whitespace-nowrap ${
+              favoritesOnly ? 'border-peach bg-peachsoft text-plumdeep' : 'border-black/10'
+            }`}
+          >
+            <FiStar size={14} fill={favoritesOnly ? 'currentColor' : 'none'} />
+            Favorites
+          </button>
+          <button
+            onClick={() => {
+              setSearchOpen((v) => !v)
+              if (searchOpen) setSearchTerm('')
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-black/10 text-sm font-semibold whitespace-nowrap"
+          >
+            {searchOpen ? 'Close search' : (
+              <>
+                <FiSearch size={14} /> Search
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {searchOpen && (
@@ -215,6 +311,12 @@ export default function Chat() {
           {visibleMessages.length === 0 && (
             searchTerm.trim() ? (
               <EmptyState icon={FiSearch} title="No messages match that search" />
+            ) : favoritesOnly ? (
+              <EmptyState
+                icon={FiStar}
+                title="No favorites yet"
+                subtitle="Tap the star on a message to keep it close."
+              />
             ) : (
               <EmptyState
                 icon={FiMessageCircle}
@@ -227,8 +329,10 @@ export default function Chat() {
           {visibleMessages.map((m) => {
             const mine = m.from === firebaseUser.uid
             const groups = groupedReactions(m.reactions)
+            const myFavorite = !!m.favorites?.[firebaseUser.uid]
+            const favoriteCount = Object.keys(m.favorites || {}).length
             return (
-              <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'} group`}>
+              <div key={m.id} id={`msg-${m.id}`} className={`flex flex-col ${mine ? 'items-end' : 'items-start'} group rounded-xl transition-shadow`}>
                 <div className="relative max-w-[65%]">
                   <div
                     className={`px-3.5 py-2.5 rounded-2xl text-sm ${
@@ -240,6 +344,21 @@ export default function Chat() {
                     <div className="text-[10px] opacity-60 font-semibold mb-0.5">
                       {mine ? 'You' : partner?.displayName || 'Partner'}
                     </div>
+
+                    {m.replyTo && (
+                      <button
+                        onClick={() => scrollToMessage(m.replyTo.id)}
+                        className={`block w-full text-left mb-1.5 px-2 py-1 rounded-lg text-[11px] border-l-2 ${
+                          mine ? 'border-plumdeep/40 bg-white/30' : 'border-plumdeep/20 bg-white/50'
+                        } opacity-80 truncate`}
+                      >
+                        <span className="font-semibold">
+                          {m.replyTo.from === firebaseUser.uid ? 'You' : partner?.displayName || 'Partner'}
+                        </span>{' '}
+                        {m.replyTo.type === 'image' ? '📷 Photo' : m.replyTo.text}
+                      </button>
+                    )}
+
                     {m.type === 'image' ? (
                       <img
                         src={m.imageData}
@@ -251,16 +370,51 @@ export default function Chat() {
                     )}
                   </div>
 
-                  {/* reaction trigger */}
-                  <button
-                    onClick={() => setPickerOpenFor(pickerOpenFor === m.id ? null : m.id)}
-                    className={`absolute top-0 ${
+                  {/* hover action row */}
+                  <div
+                    className={`absolute top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${
                       mine ? '-left-8' : '-right-8'
-                    } opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full border border-black/10 bg-white flex items-center justify-center text-[#9a8a9c]`}
-                    title="React"
+                    }`}
                   >
-                    <FiSmile size={13} />
-                  </button>
+                    <button
+                      onClick={() => setPickerOpenFor(pickerOpenFor === m.id ? null : m.id)}
+                      className="w-6 h-6 rounded-full border border-black/10 bg-white flex items-center justify-center text-[#9a8a9c]"
+                      title="React"
+                      aria-label="React to message"
+                    >
+                      <FiSmile size={13} />
+                    </button>
+                    <button
+                      onClick={() => startReply(m)}
+                      className="w-6 h-6 rounded-full border border-black/10 bg-white flex items-center justify-center text-[#9a8a9c]"
+                      title="Reply"
+                      aria-label="Reply to message"
+                    >
+                      <FiCornerUpLeft size={13} />
+                    </button>
+                    <button
+                      onClick={() => toggleFavorite(m)}
+                      className={`w-6 h-6 rounded-full border bg-white flex items-center justify-center ${
+                        myFavorite ? 'border-peach text-peach' : 'border-black/10 text-[#9a8a9c]'
+                      }`}
+                      title={myFavorite ? 'Unfavorite' : 'Favorite'}
+                      aria-label={myFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                      aria-pressed={myFavorite}
+                    >
+                      <FiStar size={13} fill={myFavorite ? 'currentColor' : 'none'} />
+                    </button>
+                    {m.type === 'image' && !m.savedAsMemory && (
+                      <button
+                        onClick={() => saveAsMemory(m)}
+                        disabled={savingMemoryFor === m.id}
+                        className="w-6 h-6 rounded-full border border-black/10 bg-white flex items-center justify-center text-[#9a8a9c] disabled:opacity-50"
+                        title="Save as Memory"
+                        aria-label="Save image as memory"
+                      >
+                        <FiBookmark size={13} />
+                      </button>
+                    )}
+                  </div>
 
                   {pickerOpenFor === m.id && (
                     <div
@@ -281,24 +435,37 @@ export default function Chat() {
                   )}
                 </div>
 
-                {Object.keys(groups).length > 0 && (
-                  <div className={`flex gap-1 mt-1 ${mine ? 'flex-row-reverse' : ''}`}>
-                    {Object.entries(groups).map(([emoji, uids]) => (
-                      <button
-                        key={emoji}
-                        onClick={() => toggleReaction(m, emoji)}
-                        className={`text-[11px] px-1.5 py-0.5 rounded-full border flex items-center gap-1 ${
-                          uids.includes(firebaseUser.uid)
-                            ? 'border-peach bg-peachsoft'
-                            : 'border-black/10 bg-white'
-                        }`}
-                      >
-                        <span>{emoji}</span>
-                        <span className="text-[#9a8a9c]">{uids.length}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className={`flex items-center gap-1.5 mt-1 ${mine ? 'flex-row-reverse' : ''}`}>
+                  {Object.keys(groups).length > 0 && (
+                    <div className={`flex gap-1 ${mine ? 'flex-row-reverse' : ''}`}>
+                      {Object.entries(groups).map(([emoji, uids]) => (
+                        <button
+                          key={emoji}
+                          onClick={() => toggleReaction(m, emoji)}
+                          className={`text-[11px] px-1.5 py-0.5 rounded-full border flex items-center gap-1 ${
+                            uids.includes(firebaseUser.uid)
+                              ? 'border-peach bg-peachsoft'
+                              : 'border-black/10 bg-white'
+                          }`}
+                        >
+                          <span>{emoji}</span>
+                          <span className="text-[#9a8a9c]">{uids.length}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {favoriteCount > 0 && (
+                    <div className="flex items-center gap-0.5 text-[11px] text-[#9a8a9c]">
+                      <FiStar size={11} className="text-peach" fill="currentColor" />
+                      {favoriteCount}
+                    </div>
+                  )}
+                  {m.savedAsMemory && (
+                    <div className="flex items-center gap-0.5 text-[10px] text-[#9a8a9c]" title="Saved to Memories">
+                      <FiBookmark size={10} /> Saved
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })}
@@ -322,6 +489,26 @@ export default function Chat() {
 
         {imgError && <div className="px-3.5 pt-2 text-xs text-[#9b3b3b]">{imgError}</div>}
 
+        {replyingTo && (
+          <div className="flex items-center gap-2 px-3.5 pt-2.5 -mb-1">
+            <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blush text-xs text-ink border-l-2 border-peach">
+              <FiCornerUpLeft size={12} className="flex-shrink-0" />
+              <span className="truncate">
+                Replying to {replyingTo.from === firebaseUser.uid ? 'yourself' : partner?.displayName || 'partner'}
+                {replyingTo.type === 'image' ? ' — 📷 Photo' : `: ${replyingTo.text}`}
+              </span>
+            </div>
+            <button
+              onClick={() => setReplyingTo(null)}
+              className="w-6 h-6 rounded-full border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
+              title="Cancel reply"
+              aria-label="Cancel reply"
+            >
+              <FiX size={13} />
+            </button>
+          </div>
+        )}
+
         <div className="flex gap-2.5 p-3.5 border-t border-black/10 items-center">
           <input
             ref={fileInputRef}
@@ -343,6 +530,7 @@ export default function Chat() {
             )}
           </button>
           <input
+            ref={inputRef}
             className="flex-1 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
             placeholder="Type a message..."
             value={text}

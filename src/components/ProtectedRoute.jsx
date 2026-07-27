@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { AppShellSkeleton } from './Skeleton'
 
 // requireCouple: true = must already be linked to a partner (most pages)
 //                false = must NOT be linked yet (only the LinkPartner page itself)
@@ -24,11 +25,11 @@ export default function ProtectedRoute({ children, requireCouple = true }) {
     )
   }
   if (loading || firebaseUser === undefined) {
-    return <div className="min-h-screen flex items-center justify-center text-plum">Loading…</div>
+    return <AppShellSkeleton />
   }
   if (!firebaseUser) return <Navigate to="/login" replace />
   if (!profile) {
-    return <div className="min-h-screen flex items-center justify-center text-plum">Setting things up…</div>
+    return <AppShellSkeleton />
   }
   if (requireCouple === true && !profile.coupleId) return <Navigate to="/link" replace />
   if (requireCouple === false && profile.coupleId) return <Navigate to="/dashboard" replace />

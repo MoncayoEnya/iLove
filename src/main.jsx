@@ -17,3 +17,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </React.StrictMode>
 )
+
+// Registers public/sw.js so the app is installable and the last-loaded
+// screen is available offline. See public/sw.js for what it does and
+// doesn't cover (no push notifications — that needs a backend).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}

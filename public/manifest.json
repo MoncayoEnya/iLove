@@ -1,0 +1,13 @@
+{
+  "name": "iLovee",
+  "short_name": "iLovee",
+  "description": "A relationship companion to communicate, plan, and build memories together.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#2b1a30",
+  "theme_color": "#2b1a30",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
