@@ -1,10 +1,17 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { doc, setDoc } from 'firebase/firestore'
+import { useForm } from 'react-hook-form'
+import toast from 'react-hot-toast'
+import { FiMoon, FiSun, FiDownload } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import { usePartner } from '../hooks/usePartner'
 import { useLinkCouple } from '../hooks/useLinkCouple'
+import { useMemberNames } from '../hooks/useMemberNames'
+import { joinCodeSchema, zodResolver } from '../lib/schemas'
+import { fetchCoupleData, downloadJSON, downloadHTML, buildReadableHTML } from '../utils/exportData'
 
 const NOTIF_OPTIONS = [
   ['notifyChat', 'New messages'],
@@ -15,8 +22,10 @@ const NOTIF_OPTIONS = [
 
 export default function Settings() {
   const { firebaseUser, profile, couple, resetPassword, unlinkPartner, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const { partner, hasPartner } = usePartner()
   const { createSpace, joinWithCode } = useLinkCouple()
+  const names = useMemberNames(couple?.members)
   const navigate = useNavigate()
 
   const prefs = profile?.prefs || {}
@@ -25,20 +34,47 @@ export default function Settings() {
   const [confirmingUnlink, setConfirmingUnlink] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState('')
+  const [exporting, setExporting] = useState(null)
 
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
-  const [joinCode, setJoinCode] = useState('')
   const [joining, setJoining] = useState(false)
   const [joinError, setJoinError] = useState('')
   const [codeCopied, setCodeCopied] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+
+  const {
+    register: registerJoin,
+    handleSubmit: handleJoinSubmit,
+    reset: resetJoinForm,
+    formState: { errors: joinFieldErrors },
+  } = useForm({ resolver: zodResolver(joinCodeSchema), defaultValues: { joinCode: '' } })
 
   // You can be in one of three states here:
   //  - fully linked: `couple` exists AND has a partner
   //  - pending: `couple` exists (you started a space) but partner hasn't joined yet
   //  - unlinked: no `couple` at all
   const isPending = !!couple && !hasPartner
+
+  async function handleExport(format) {
+    if (!couple?.id || exporting) return
+    setExporting(format)
+    try {
+      const data = await fetchCoupleData(couple.id)
+      const stamp = new Date().toISOString().slice(0, 10)
+      const label = `${profile?.displayName || 'You'}${partner?.displayName ? ' & ' + partner.displayName : ''}`
+      if (format === 'json') {
+        downloadJSON(data, `iLovee-backup-${stamp}.json`)
+      } else {
+        downloadHTML(buildReadableHTML(data, names, label), `iLovee-summary-${stamp}.html`)
+      }
+      toast.success('Export ready — check your downloads.')
+    } catch (e) {
+      toast.error("Couldn't put that export together — try again.")
+    } finally {
+      setExporting(null)
+    }
+  }
 
   async function togglePref(key) {
     await setDoc(
@@ -53,6 +89,7 @@ export default function Settings() {
     try {
       await resetPassword(profile.email)
       setResetSent(true)
+      toast.success('Reset email sent.')
     } catch (err) {
       setResetError(err.message)
     }
@@ -95,13 +132,13 @@ export default function Settings() {
     }
   }
 
-  async function handleJoin(e) {
-    e.preventDefault()
+  async function handleJoin(values) {
     setJoining(true)
     setJoinError('')
     try {
-      await joinWithCode(joinCode)
-      setJoinCode('')
+      await joinWithCode(values.joinCode)
+      resetJoinForm()
+      toast.success('Linked up!')
     } catch (err) {
       setJoinError(err.message)
     } finally {
@@ -114,9 +151,10 @@ export default function Settings() {
     try {
       await navigator.clipboard.writeText(couple.inviteCode)
       setCodeCopied(true)
+      toast.success('Invite code copied.')
       setTimeout(() => setCodeCopied(false), 2000)
     } catch {
-      // clipboard API can fail (permissions, non-secure context) — no big deal
+      toast.error("Couldn't copy — select and copy it manually.")
     }
   }
 
@@ -146,6 +184,32 @@ export default function Settings() {
           {resetError && <div className="text-sm text-[#9b3b3b] mt-2.5">{resetError}</div>}
         </div>
 
+        {/* Appearance */}
+        <div className="bg-white border border-black/10 rounded-2xl p-5">
+          <h3 className="font-semibold mb-1">Appearance</h3>
+          <p className="text-xs text-[#9a8a9c] mb-4">Switch between light and dark theme.</p>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 text-sm">
+              {theme === 'dark' ? <FiMoon size={15} /> : <FiSun size={15} />}
+              {theme === 'dark' ? 'Dark mode' : 'Light mode'}
+            </span>
+            <button
+              onClick={toggleTheme}
+              role="switch"
+              aria-checked={theme === 'dark'}
+              className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+                theme === 'dark' ? 'bg-peach' : 'bg-black/15'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                  theme === 'dark' ? 'translate-x-[22px]' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
         {/* Notifications */}
         <div className="bg-white border border-black/10 rounded-2xl p-5">
           <h3 className="font-semibold mb-1">Notifications</h3>
@@ -166,6 +230,38 @@ export default function Settings() {
             ))}
           </div>
         </div>
+
+        {/* Data & backup */}
+        {couple && (
+          <div className="bg-white border border-black/10 rounded-2xl p-5">
+            <h3 className="font-semibold mb-1">Data & backup</h3>
+            <p className="text-xs text-[#9a8a9c] mb-4">
+              Download everything — chat, memories, check-ins, goals, tasks, and the love jar.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => handleExport('json')}
+                disabled={!!exporting}
+                className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl border border-black/10 hover:bg-black/5 disabled:opacity-60"
+              >
+                <FiDownload size={14} />
+                {exporting === 'json' ? 'Preparing…' : 'JSON backup'}
+              </button>
+              <button
+                onClick={() => handleExport('html')}
+                disabled={!!exporting}
+                className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl border border-black/10 hover:bg-black/5 disabled:opacity-60"
+              >
+                <FiDownload size={14} />
+                {exporting === 'html' ? 'Preparing…' : 'Readable summary'}
+              </button>
+            </div>
+            <p className="text-xs text-[#9a8a9c] mt-3">
+              JSON keeps the raw data (handy if you ever want it elsewhere); the summary is a
+              browsable page you can open, print, or save as a PDF from your browser's print dialog.
+            </p>
+          </div>
+        )}
 
         {/* Shared space */}
         <div className="bg-white border border-black/10 rounded-2xl p-5">
@@ -257,27 +353,29 @@ export default function Settings() {
 
               <div className="h-px bg-black/10" />
 
-              <form onSubmit={handleJoin}>
+              <form onSubmit={handleJoinSubmit(handleJoin)} noValidate>
                 <div className="text-xs font-semibold text-[#9a8a9c] mb-1.5 uppercase tracking-wide">
                   Invite code from your partner
                 </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
-                    value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                     placeholder="e.g. 8K3PQZ"
                     maxLength={12}
-                    className="flex-1 font-mono text-lg tracking-[0.2em] bg-white border border-black/10 rounded-xl px-4 py-2.5 focus:outline-none focus:border-peach"
+                    className="flex-1 font-mono text-lg tracking-[0.2em] bg-white border border-black/10 rounded-xl px-4 py-2.5 focus:outline-none focus:border-peach uppercase"
+                    {...registerJoin('joinCode')}
                   />
                   <button
                     type="submit"
-                    disabled={joining || !joinCode.trim()}
+                    disabled={joining}
                     className="text-sm font-semibold px-4 py-2.5 rounded-xl bg-peach text-white disabled:opacity-60"
                   >
                     {joining ? 'Linking...' : 'Link accounts'}
                   </button>
                 </div>
+                {joinFieldErrors.joinCode && (
+                  <div className="text-sm text-[#9b3b3b] mt-2.5">{joinFieldErrors.joinCode.message}</div>
+                )}
                 {joinError && <div className="text-sm text-[#9b3b3b] mt-2.5">{joinError}</div>}
               </form>
             </div>

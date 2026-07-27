@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import dayjs from 'dayjs'
+import toast from 'react-hot-toast'
 import {
   addDoc,
   collection,
@@ -24,31 +26,7 @@ import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { compressImage } from '../utils/compressImage'
 import { MOODS } from '../utils/moods'
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-// Given "YYYY-MM-DD", returns years together so far and days until the
-// next anniversary (0 = today).
-function anniversaryInfo(dateStr) {
-  if (!dateStr) return null
-  const start = new Date(dateStr + 'T00:00:00')
-  if (Number.isNaN(start.getTime())) return null
-
-  const now = new Date()
-  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-
-  let next = new Date(todayMidnight.getFullYear(), start.getMonth(), start.getDate())
-  if (next < todayMidnight) {
-    next = new Date(todayMidnight.getFullYear() + 1, start.getMonth(), start.getDate())
-  }
-
-  const years = next.getFullYear() - start.getFullYear()
-  const daysUntil = Math.round((next - todayMidnight) / 86400000)
-
-  return { years, daysUntil }
-}
+import { anniversaryInfo, ordinalSuffix, todayStr } from '../utils/date'
 
 export default function Dashboard() {
   const { firebaseUser, profile, couple } = useAuth()
@@ -133,8 +111,38 @@ export default function Dashboard() {
         await runTransaction(db, async (tx) => {
           const snap = await tx.get(coupleRef)
           const data = snap.data()
-          if (data.lastCheckinDate !== today) {
-            tx.update(coupleRef, { streak: (data.streak || 0) + 1, lastCheckinDate: today })
+          if (data.lastCheckinDate === today) return
+
+          const last = data.lastCheckinDate
+          const gap = last ? dayjs(today).diff(dayjs(last), 'day') : null
+          const graceAvailable = data.streakGraceAvailable !== false
+
+          let newStreak
+          let graceUsed = false
+          if (!last || gap <= 1) {
+            // First check-in ever, or checked in yesterday — normal streak.
+            newStreak = (data.streak || 0) + 1
+          } else if (gap === 2 && graceAvailable) {
+            // Missed exactly one day, and the grace day hasn't been spent yet.
+            newStreak = (data.streak || 0) + 1
+            graceUsed = true
+          } else {
+            // Missed more than a grace day covers — streak restarts today.
+            newStreak = 1
+          }
+
+          tx.update(coupleRef, {
+            streak: newStreak,
+            lastCheckinDate: today,
+            // A restarted streak gets a fresh grace day; using the grace
+            // day spends it until the streak breaks and restarts again.
+            streakGraceAvailable: newStreak === 1 ? true : !graceUsed && graceAvailable,
+          })
+
+          if (graceUsed) {
+            toast.success("Missed a day? No worries — your streak grace day covered it.")
+          } else if (newStreak === 1 && data.streak > 1) {
+            toast("Streak restarted today — every streak starts somewhere.", { icon: '🔥' })
           }
         })
       }
@@ -150,6 +158,12 @@ export default function Dashboard() {
             ? 'Waiting for your partner to join with your invite code.'
             : `You and ${partner?.displayName || '...'} — day ${couple?.streak || 0} of your streak.`}
         </p>
+        {partner?.loveLanguage && (
+          <p className="text-xs text-[#9a8a9c] mt-1">
+            {partner.displayName || 'Your partner'}'s love language is{' '}
+            <span className="font-semibold text-plum">{partner.loveLanguage}</span>.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -309,7 +323,7 @@ export default function Dashboard() {
             <div className="text-sm">
               <span className="text-2xl font-semibold">{anniversary.daysUntil}</span>{' '}
               day{anniversary.daysUntil === 1 ? '' : 's'} until your {anniversary.years}
-              {anniversary.years === 1 ? 'st' : anniversary.years === 2 ? 'nd' : anniversary.years === 3 ? 'rd' : 'th'}{' '}
+              {ordinalSuffix(anniversary.years)}{' '}
               anniversary.
             </div>
           )}

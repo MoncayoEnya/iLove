@@ -1,47 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
+import dayjs from 'dayjs'
 import { FaFire } from 'react-icons/fa'
+import { FiSmile } from 'react-icons/fi'
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { MOODS } from '../utils/moods'
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-// Last `n` days as 'YYYY-MM-DD' strings, most recent first.
-function lastNDays(n) {
-  const out = []
-  const now = new Date()
-  for (let i = 0; i < n; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
-    out.push(d.toISOString().slice(0, 10))
-  }
-  return out
-}
-
-function friendlyDate(dateStr, today, yesterday) {
-  if (dateStr === today) return 'Today'
-  if (dateStr === yesterday) return 'Yesterday'
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-}
+import { friendlyDate, lastNDays, todayStr, yesterdayStr } from '../utils/date'
+import EmptyState from '../components/EmptyState'
+import { SkeletonList } from '../components/Skeleton'
 
 function moodInfo(v) {
   return MOODS.find((m) => m.v === v)
 }
+
+// Higher = better mood. Used to plot a numeric trend line from the mood picker's labels.
+const MOOD_SCORE = { amazing: 5, good: 4, okay: 3, sad: 2, hard: 1 }
 
 export default function CheckIns() {
   const { firebaseUser, couple } = useAuth()
   const { partner, partnerUid, hasPartner } = usePartner()
   const coupleId = couple?.id
   const today = todayStr()
-  const yesterday = useMemo(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - 1)
-    return d.toISOString().slice(0, 10)
-  }, [])
+  const yesterday = useMemo(() => yesterdayStr(), [])
 
   const [checkins, setCheckins] = useState([])
   const [loading, setLoading] = useState(true)
@@ -76,6 +59,22 @@ export default function CheckIns() {
     return (byDate[dateStr] || []).find((c) => c.uid === uid)
   }
 
+  const chartData = useMemo(
+    () =>
+      trendDays.map((d) => {
+        const mine = entryFor(d, firebaseUser.uid)
+        const theirs = partnerUid ? entryFor(d, partnerUid) : null
+        return {
+          date: d,
+          label: friendlyDate(d, today, yesterday).slice(0, 3),
+          you: mine ? MOOD_SCORE[mine.mood] : null,
+          partner: theirs ? MOOD_SCORE[theirs.mood] : null,
+        }
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [byDate, trendDays.join(','), firebaseUser.uid, partnerUid]
+  )
+
   const sortedDates = Object.keys(byDate).sort((a, b) => (a < b ? 1 : -1))
 
   return (
@@ -90,6 +89,59 @@ export default function CheckIns() {
         </div>
         <div className="flex items-center gap-1.5 bg-peach/10 rounded-full px-3.5 py-2 text-sm text-plum font-semibold w-fit">
           <FaFire size={13} /> {couple?.streak || 0} day streak
+          {couple?.streak > 0 && couple?.streakGraceAvailable !== false && (
+            <span
+              title="Miss a day and your streak survives once, automatically."
+              className="ml-1 text-xs font-normal text-[#9a8a9c]"
+            >
+              🛡️
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ---- 14-day mood trend chart ---- */}
+      <div className="bg-white border border-black/10 rounded-2xl p-5 mb-5">
+        <h3 className="font-semibold mb-4 text-sm text-[#7a6a7c]">Mood trend</h3>
+        <div className="h-48">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#00000010" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#9a8a9c' }} axisLine={false} tickLine={false} />
+              <YAxis
+                domain={[1, 5]}
+                ticks={[1, 2, 3, 4, 5]}
+                tick={{ fontSize: 11, fill: '#9a8a9c' }}
+                axisLine={false}
+                tickLine={false}
+                width={20}
+              />
+              <Tooltip
+                contentStyle={{ borderRadius: 10, border: '1px solid #00000015', fontSize: 12 }}
+                formatter={(value, name) => [value ? MOODS.find((m) => MOOD_SCORE[m.v] === value)?.l : '—', name]}
+              />
+              <Line
+                type="monotone"
+                dataKey="you"
+                name="You"
+                stroke="#d97a6a"
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                connectNulls
+              />
+              {hasPartner && (
+                <Line
+                  type="monotone"
+                  dataKey="partner"
+                  name={partner?.displayName || 'Partner'}
+                  stroke="#e8b978"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  connectNulls
+                />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
@@ -103,7 +155,7 @@ export default function CheckIns() {
             return (
               <div key={d} className="flex-1 text-center">
                 <div className="text-[9px] text-[#a892a9] mb-1.5 uppercase tracking-wide">
-                  {new Date(d + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'narrow' })}
+                  {dayjs(d).format('dd')[0]}
                 </div>
                 <div className="flex flex-col gap-1 items-center">
                   <div
@@ -144,10 +196,14 @@ export default function CheckIns() {
 
       {/* ---- History feed ---- */}
       {loading ? (
-        <div className="text-sm text-[#a892a9]">Loading…</div>
+        <SkeletonList count={3} lines={2} />
       ) : sortedDates.length === 0 ? (
-        <div className="bg-white border border-black/10 rounded-2xl p-8 text-center text-sm text-[#a892a9]">
-          No check-ins yet. Once you check in from the dashboard, they'll show up here.
+        <div className="bg-white border border-black/10 rounded-2xl p-5">
+          <EmptyState
+            icon={FiSmile}
+            title="No check-ins yet"
+            subtitle="Once you check in from the dashboard, they'll show up here."
+          />
         </div>
       ) : (
         <div className="flex flex-col gap-4">

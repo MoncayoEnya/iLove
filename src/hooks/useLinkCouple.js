@@ -28,6 +28,7 @@ export function useLinkCouple() {
       inviteCode: code,
       streak: 0,
       lastCheckinDate: null,
+      streakGraceAvailable: true,
       createdAt: serverTimestamp(),
     })
     // Small lookup doc, keyed by the code itself, so joining can find the

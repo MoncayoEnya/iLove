@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   FiCalendar,
@@ -12,11 +11,14 @@ import {
   FiSmile,
   FiTarget,
   FiUser,
+  FiUsers,
   FiX,
 } from 'react-icons/fi'
 import { FaFire } from 'react-icons/fa'
 import { useAuth } from '../context/AuthContext'
+import { useUIStore } from '../store/uiStore'
 import Logo from './Logo'
+import ThemeToggle from './ThemeToggle'
 
 const items = [
   ['/dashboard', FiHome, 'Dashboard'],
@@ -27,12 +29,19 @@ const items = [
   ['/jar', FiHeart, 'Love jar'],
   ['/memories', FiImage, 'Memories'],
   ['/goals', FiTarget, 'Goals'],
+  ['/conflict', FiUsers, 'Conflict recovery'],
 ]
 
 const secondaryItems = [
   ['/profile', FiUser, 'Profile'],
   ['/settings', FiSettings, 'Settings'],
 ]
+
+// Home/Chat/Tasks/Memories/Profile already have one-tap access from the
+// mobile BottomNav, so the hamburger menu only needs to surface the rest.
+const mobileOverflowItems = items.filter(
+  ([to]) => !['/dashboard', '/chat', '/tasks', '/memories'].includes(to)
+)
 
 function NavItem({ to, Icon, label, end, onClick }) {
   return (
@@ -56,7 +65,9 @@ function NavItem({ to, Icon, label, end, onClick }) {
 
 export default function Sidebar() {
   const { logout, couple, profile } = useAuth()
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const mobileOpen = useUIStore((s) => s.mobileNavOpen)
+  const setMobileOpen = useUIStore((s) => s.setMobileNavOpen)
+  const toggleMobileOpen = useUIStore((s) => s.toggleMobileNav)
 
   return (
     <>
@@ -70,6 +81,7 @@ export default function Sidebar() {
           <span className="flex items-center gap-1 text-xs text-peachsoft font-semibold bg-peach/10 rounded-full px-2.5 py-1.5">
             <FaFire size={12} /> {couple?.streak || 0}
           </span>
+          <ThemeToggle />
           <button
             onClick={() => setMobileOpen((o) => !o)}
             aria-label="Toggle menu"
@@ -83,20 +95,17 @@ export default function Sidebar() {
       {/* Mobile dropdown menu — shown in normal flow, pushes content down */}
       {mobileOpen && (
         <div className="md:hidden bg-plumdeep text-[#f3e6e8] px-4 pb-4 flex flex-col gap-1 border-t border-white/10">
-          {items.map(([to, Icon, label]) => (
+          {mobileOverflowItems.map(([to, Icon, label]) => (
             <NavItem
               key={to}
               to={to}
               Icon={Icon}
               label={label}
-              end={to === '/dashboard'}
               onClick={() => setMobileOpen(false)}
             />
           ))}
           <div className="mt-2 pt-2 border-t border-white/10 flex flex-col gap-1">
-            {secondaryItems.map(([to, Icon, label]) => (
-              <NavItem key={to} to={to} Icon={Icon} label={label} onClick={() => setMobileOpen(false)} />
-            ))}
+            <NavItem to="/settings" Icon={FiSettings} label="Settings" onClick={() => setMobileOpen(false)} />
           </div>
           <button
             onClick={logout}
@@ -114,8 +123,11 @@ export default function Sidebar() {
           <span className="font-serif text-xl font-semibold">iLove</span>
         </div>
 
-        <div className="mt-3 flex items-center gap-1.5 bg-peach/10 rounded-full px-3 py-2 text-sm text-peachsoft font-semibold w-fit">
-          <FaFire size={13} /> {couple?.streak || 0} day streak
+        <div className="mt-3 flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-peach/10 rounded-full px-3 py-2 text-sm text-peachsoft font-semibold w-fit">
+            <FaFire size={13} /> {couple?.streak || 0} day streak
+          </div>
+          <ThemeToggle />
         </div>
 
         <nav className="mt-8 flex flex-col gap-1 flex-1">
