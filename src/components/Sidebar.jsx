@@ -5,11 +5,13 @@ import {
   FiHeart,
   FiHome,
   FiImage,
+  FiList,
   FiMenu,
   FiMessageCircle,
   FiSettings,
   FiSmile,
   FiTarget,
+  FiTrendingUp,
   FiUser,
   FiUsers,
   FiX,
@@ -22,6 +24,7 @@ import ThemeToggle from './ThemeToggle'
 
 const items = [
   ['/dashboard', FiHome, 'Dashboard'],
+  ['/insights', FiTrendingUp, 'Insights'],
   ['/checkins', FiSmile, 'Check-ins'],
   ['/chat', FiMessageCircle, 'Chat'],
   ['/tasks', FiCheckSquare, 'Tasks'],
@@ -29,6 +32,7 @@ const items = [
   ['/jar', FiHeart, 'Love jar'],
   ['/memories', FiImage, 'Memories'],
   ['/goals', FiTarget, 'Goals'],
+  ['/bucket-list', FiList, 'Bucket list'],
   ['/conflict', FiUsers, 'Conflict recovery'],
 ]
 

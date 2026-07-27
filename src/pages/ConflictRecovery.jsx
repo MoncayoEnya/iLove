@@ -7,38 +7,41 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from 'firebase/firestore'
 import toast from 'react-hot-toast'
-import { FiCheckCircle, FiHeart, FiLock, FiUsers } from 'react-icons/fi'
+import { FiCheckCircle, FiGift, FiHeart, FiLock, FiUsers } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { friendlyDate, todayStr } from '../utils/date'
 
-// Fixed guided prompts, per the design guide: both partners reflect privately
-// on the same questions before anything is shared, so nobody's first draft
-// is written in reaction to what the other person said.
+// Fixed guided prompts (steps 1-4 of the spec). Both partners reflect
+// privately on the same questions before anything is shared, so nobody's
+// first draft is written in reaction to what the other person said.
+// Step 5, "let's make a promise," happens together after reveal — see
+// the promise section further down.
 const PROMPTS = [
   {
-    id: 'happened',
-    label: 'What happened, from your side?',
-    hint: 'Stick to the facts — what was said or done, not how you read into it.',
+    id: 'feel',
+    label: 'How do you feel?',
+    hint: 'Name the feeling itself, not the story about who\'s right.',
   },
   {
-    id: 'feelings',
-    label: 'How did it make you feel?',
-    hint: 'Name the feeling, not the story about who\'s right.',
+    id: 'hurt',
+    label: 'What hurt you?',
+    hint: 'The specific thing — a word, a moment, an absence.',
   },
   {
-    id: 'understand',
-    label: 'What do you think your partner needs to understand?',
-    hint: 'The thing you most want them to get, even if it\'s hard to say.',
+    id: 'need',
+    label: 'What do you need?',
+    hint: 'Something concrete you need right now, even if it\'s small.',
   },
   {
-    id: 'resolve',
-    label: 'What would help you feel like this is resolved?',
-    hint: 'Something concrete, even small.',
+    id: 'partnerCanDo',
+    label: 'What can your partner do?',
+    hint: 'One real, doable thing — not "just understand me."',
   },
 ]
 
@@ -55,6 +58,9 @@ export default function ConflictRecovery() {
   const [starting, setStarting] = useState(false)
   const [answers, setAnswers] = useState(emptyAnswers())
   const [submitting, setSubmitting] = useState(false)
+  const [promiseDraft, setPromiseDraft] = useState('')
+  const [savingPromise, setSavingPromise] = useState(false)
+  const [activeResponses, setActiveResponses] = useState({})
 
   useEffect(() => {
     if (!coupleId) return
@@ -70,13 +76,49 @@ export default function ConflictRecovery() {
   const activeSession = sessions.find((s) => s.status !== 'closed') || null
   const history = sessions.filter((s) => s.status === 'closed')
 
+  // Responses live in a per-user subcollection (couples/{id}/conflictSessions/{id}/responses/{uid})
+  // rather than a map field on the session doc. That's what makes the "hidden
+  // until both finish" promise real: a map field is fetched in full the moment
+  // either partner writes to it, so the partner's answers are already sitting
+  // in memory the instant they're saved — the UI was just choosing not to
+  // render them yet. Splitting into one document per uid lets Firestore
+  // security rules actually block the read server-side until status is
+  // 'revealed' or 'closed'. See the rules snippet below — it has to be added
+  // to your firestore.rules file directly; this file can't deploy it for you.
+  //
+  // match /couples/{coupleId}/conflictSessions/{sessionId}/responses/{responseUid} {
+  //   allow write: if request.auth.uid == responseUid;
+  //   allow read: if request.auth.uid == responseUid
+  //     || get(/databases/$(database)/documents/couples/$(coupleId)/conflictSessions/$(sessionId)).data.status != 'active';
+  // }
+  useEffect(() => {
+    if (!coupleId || !activeSession) {
+      setActiveResponses({})
+      return
+    }
+    const unsub = onSnapshot(
+      collection(db, 'couples', coupleId, 'conflictSessions', activeSession.id, 'responses'),
+      (snap) => {
+        const next = {}
+        snap.docs.forEach((d) => (next[d.id] = d.data()))
+        setActiveResponses(next)
+      }
+    )
+    return unsub
+  }, [coupleId, activeSession?.id])
+
   useEffect(() => {
     setAnswers(emptyAnswers())
+    setPromiseDraft('')
   }, [activeSession?.id])
 
-  const myResponse = activeSession?.responses?.[uid] || null
-  const partnerResponse = (partnerUid && activeSession?.responses?.[partnerUid]) || null
+  const myResponse = activeResponses[uid] || null
+  const partnerResponse = (partnerUid && activeResponses[partnerUid]) || null
   const bothSubmitted = !!myResponse && !!partnerResponse
+
+  // The most recent closed session with a promise that hasn't been marked
+  // kept yet — a gentle reminder so promises don't quietly get forgotten.
+  const openPromise = history.find((s) => s.promise && !s.promiseFulfilled) || null
 
   async function startSession() {
     if (!topic.trim() || !coupleId || starting) return
@@ -87,7 +129,9 @@ export default function ConflictRecovery() {
         initiatedBy: uid,
         createdAt: serverTimestamp(),
         status: 'active',
-        responses: {},
+        promise: null,
+        promiseBy: null,
+        promiseFulfilled: false,
       })
       setTopic('')
     } catch (e) {
@@ -105,9 +149,10 @@ export default function ConflictRecovery() {
     }
     setSubmitting(true)
     try {
-      await updateDoc(doc(db, 'couples', coupleId, 'conflictSessions', activeSession.id), {
-        [`responses.${uid}`]: { answers, submittedAt: serverTimestamp() },
-      })
+      await setDoc(
+        doc(db, 'couples', coupleId, 'conflictSessions', activeSession.id, 'responses', uid),
+        { answers, submittedAt: serverTimestamp() }
+      )
       toast.success('Saved. Sit tight for your partner.')
     } catch (e) {
       toast.error("Couldn't save your answers — try again.")
@@ -126,6 +171,22 @@ export default function ConflictRecovery() {
     }
   }
 
+  async function savePromise() {
+    if (!promiseDraft.trim() || savingPromise) return
+    setSavingPromise(true)
+    try {
+      await updateDoc(doc(db, 'couples', coupleId, 'conflictSessions', activeSession.id), {
+        promise: promiseDraft.trim(),
+        promiseBy: uid,
+        promiseAt: serverTimestamp(),
+      })
+    } catch (e) {
+      toast.error("Couldn't save that promise — try again.")
+    } finally {
+      setSavingPromise(false)
+    }
+  }
+
   async function closeSession() {
     try {
       await updateDoc(doc(db, 'couples', coupleId, 'conflictSessions', activeSession.id), {
@@ -135,6 +196,17 @@ export default function ConflictRecovery() {
       toast.success('Marked as resolved.')
     } catch (e) {
       toast.error("Couldn't close that session — try again.")
+    }
+  }
+
+  async function markPromiseFulfilled(sessionId) {
+    try {
+      await updateDoc(doc(db, 'couples', coupleId, 'conflictSessions', sessionId), {
+        promiseFulfilled: true,
+      })
+      toast.success('Nice. That one\'s kept.')
+    } catch (e) {
+      toast.error("Couldn't update that — try again.")
     }
   }
 
@@ -148,6 +220,26 @@ export default function ConflictRecovery() {
           Reflect privately on the same prompts, then share what you wrote together — not in the heat of it.
         </p>
       </div>
+
+      {openPromise && (
+        <div className="bg-blush rounded-2xl p-4 mb-4 flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-2.5">
+            <FiGift size={16} className="text-plum mt-0.5 flex-shrink-0" />
+            <div>
+              <div className="text-xs font-semibold text-plum uppercase tracking-wide mb-0.5">
+                Promise from "{openPromise.topic}"
+              </div>
+              <div className="text-sm text-plumdeep">{openPromise.promise}</div>
+            </div>
+          </div>
+          <button
+            onClick={() => markPromiseFulfilled(openPromise.id)}
+            className="text-xs font-semibold bg-white/70 rounded-xl px-3 py-2 flex-shrink-0"
+          >
+            Mark as kept
+          </button>
+        </div>
+      )}
 
       {!hasPartner && (
         <div className="bg-white border border-black/10 rounded-2xl p-5 text-sm text-[#9a8a9c]">
@@ -188,15 +280,17 @@ export default function ConflictRecovery() {
             </span>
           </div>
 
-          {/* Stage 1: still writing */}
+          {/* Stage 1: still writing (steps 1-4) */}
           {!myResponse && activeSession.status === 'active' && (
             <div className="mt-4 flex flex-col gap-4">
               <div className="flex items-center gap-1.5 text-xs text-[#9a8a9c]">
                 <FiLock size={11} /> Your answers stay private until you both finish.
               </div>
-              {PROMPTS.map((p) => (
+              {PROMPTS.map((p, i) => (
                 <div key={p.id}>
-                  <label className="block text-sm font-semibold mb-1">{p.label}</label>
+                  <label className="block text-sm font-semibold mb-1">
+                    Step {i + 1}. {p.label}
+                  </label>
                   <p className="text-xs text-[#9a8a9c] mb-1.5">{p.hint}</p>
                   <textarea
                     rows={2}
@@ -240,12 +334,14 @@ export default function ConflictRecovery() {
             </div>
           )}
 
-          {/* Stage 4: revealed — show both sets side by side */}
+          {/* Stage 4: revealed — show both sets side by side, then step 5 */}
           {activeSession.status === 'revealed' && myResponse && partnerResponse && (
             <div className="mt-4 flex flex-col gap-4">
-              {PROMPTS.map((p) => (
+              {PROMPTS.map((p, i) => (
                 <div key={p.id}>
-                  <div className="text-sm font-semibold mb-2">{p.label}</div>
+                  <div className="text-sm font-semibold mb-2">
+                    Step {i + 1}. {p.label}
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div className="jar-note text-left text-[13.5px] p-3">
                       <div className="text-[10px] uppercase tracking-wide text-[#9a8a9c] not-italic mb-1">You</div>
@@ -260,6 +356,33 @@ export default function ConflictRecovery() {
                   </div>
                 </div>
               ))}
+
+              <div className="border-t border-black/10 pt-4">
+                <div className="text-sm font-semibold mb-1">Step 5. Let's make a promise</div>
+                <p className="text-xs text-[#9a8a9c] mb-2">
+                  One thing you're both agreeing to going forward. Either of you can write it.
+                </p>
+                {activeSession.promise ? (
+                  <div className="jar-note text-left text-[13.5px] p-3">{activeSession.promise}</div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      className="flex-1 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+                      placeholder="e.g. We'll check in with each other before making weekend plans."
+                      value={promiseDraft}
+                      onChange={(e) => setPromiseDraft(e.target.value)}
+                    />
+                    <button
+                      onClick={savePromise}
+                      disabled={savingPromise || !promiseDraft.trim()}
+                      className="py-2.5 px-5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-60 flex-shrink-0"
+                    >
+                      {savingPromise ? 'Saving...' : 'Save promise'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={closeSession}
                 className="flex items-center gap-1.5 py-2.5 px-5 rounded-xl font-semibold text-sm border border-black/10 self-start"
@@ -274,11 +397,18 @@ export default function ConflictRecovery() {
       {history.length > 0 && (
         <div className="bg-white border border-black/10 rounded-2xl p-5">
           <h3 className="font-semibold mb-3">Past sessions</h3>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2.5">
             {history.map((s) => (
-              <div key={s.id} className="text-sm text-[#7a6a7c] flex items-center gap-2">
-                <FiCheckCircle size={13} className="text-[#7fae7f] flex-shrink-0" />
-                {s.topic}
+              <div key={s.id} className="text-sm text-[#7a6a7c]">
+                <div className="flex items-center gap-2">
+                  <FiCheckCircle size={13} className="text-[#7fae7f] flex-shrink-0" />
+                  {s.topic}
+                </div>
+                {s.promise && (
+                  <div className="text-xs text-[#9a8a9c] mt-1 ml-5">
+                    Promise: {s.promise} {s.promiseFulfilled ? '— kept ✓' : '— still open'}
+                  </div>
+                )}
               </div>
             ))}
           </div>

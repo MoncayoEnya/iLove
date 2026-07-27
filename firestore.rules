@@ -1,7 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
     function isSignedIn() {
       return request.auth != null;
     }
@@ -14,7 +13,6 @@ service cloud.firestore {
     function isInCouple(coupleId) {
       return isSignedIn() && request.auth.uid in coupleData(coupleId).members;
     }
-
     // users/{uid} — each person's own profile doc
     match /users/{uid} {
       // Only you (or your linked partner, via their couples doc) can read your profile.
@@ -24,7 +22,6 @@ service cloud.firestore {
       allow update: if isMe(uid);
       allow delete: if false;
     }
-
     // inviteCodes/{code} — tiny lookup mapping a 6-char code to a coupleId.
     // joinWithCode() reads this by exact document ID (a direct getDoc),
     // not a query — that's the key fix. Firestore can only allow a *query*
@@ -40,7 +37,6 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow update, delete: if false;
     }
-
     // couples/{coupleId} — the shared space for a linked pair
     match /couples/{coupleId} {
       // You can read a couple doc if you're already a member, OR if the
@@ -50,29 +46,42 @@ service cloud.firestore {
       // *before* the caller is a member of it.
       allow read: if isSignedIn() &&
         (request.auth.uid in resource.data.members || resource.data.members.size() < 2);
-
       // Creating a space: the creator must be a member of the new doc.
       allow create: if isSignedIn() && request.auth.uid in request.resource.data.members;
-
       // Joining: caller must already be a member OR be the one being added,
       // and the space must not already be full.
       allow update: if isSignedIn() &&
         (request.auth.uid in resource.data.members ||
           (request.auth.uid in request.resource.data.members &&
            resource.data.members.size() < 2));
-
       // Allow deleting the couple doc once you're down to the last member
       // (matches the unlink flow in AuthContext.jsx, which deletes the doc
       // when `members` would become empty).
       allow delete: if isSignedIn() &&
         request.auth.uid in resource.data.members &&
         resource.data.members.size() <= 1;
-
       // Every sub-collection (tasks, events, messages, jar, checkins,
       // recurringSeries, memories...) is only readable/writable by the
       // two linked partners.
       match /{subcollection}/{docId} {
         allow read, write: if isInCouple(coupleId);
+      }
+
+      // --- Added for Conflict Recovery (Feature #3) ------------------
+      // conflictSessions/{sessionId}/responses/{uid} is TWO levels below
+      // the couple doc, so the generic `{subcollection}/{docId}` wildcard
+      // above (which only matches one level) never reaches it — without
+      // this block it would be denied outright, not silently permissive.
+      //
+      // This is what makes "hidden until both finish" real: each partner
+      // can only write their own response doc, and can only *read* the
+      // other partner's response doc once the session's status has moved
+      // past 'active' (i.e. after "Reveal together" has been pressed).
+      match /conflictSessions/{sessionId}/responses/{responseUid} {
+        allow write: if isMe(responseUid) && isInCouple(coupleId);
+        allow read: if isInCouple(coupleId) &&
+          (isMe(responseUid) ||
+            get(/databases/$(database)/documents/couples/$(coupleId)/conflictSessions/$(sessionId)).data.status != 'active');
       }
     }
   }

@@ -10,6 +10,7 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LinkPartner from './pages/LinkPartner'
 import Dashboard from './pages/Dashboard'
+import Insights from './pages/Insights'
 import CheckIns from './pages/CheckIns'
 import Chat from './pages/Chat'
 import Tasks from './pages/Tasks'
@@ -17,6 +18,7 @@ import CalendarPage from './pages/CalendarPage'
 import LoveJar from './pages/LoveJar'
 import Memories from './pages/Memories'
 import Goals from './pages/Goals'
+import BucketList from './pages/BucketList'
 import ConflictRecovery from './pages/ConflictRecovery'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
@@ -77,6 +79,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <Dashboard />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/insights"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <Insights />
             </AppLayout>
           </ProtectedRoute>
         }
@@ -147,6 +159,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <Goals />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/bucket-list"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <BucketList />
             </AppLayout>
           </ProtectedRoute>
         }

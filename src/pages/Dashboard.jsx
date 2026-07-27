@@ -19,6 +19,7 @@ import {
   FiCheckSquare,
   FiGift,
   FiHeart,
+  FiInfo,
   FiSmile,
 } from 'react-icons/fi'
 import { db } from '../firebase'
@@ -26,32 +27,35 @@ import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { compressImage } from '../utils/compressImage'
 import { MOODS } from '../utils/moods'
-import { anniversaryInfo, ordinalSuffix, todayStr } from '../utils/date'
+import { anniversaryInfo, friendlyDate, ordinalSuffix, todayStr } from '../utils/date'
+import { computeRelationshipHealth } from '../utils/relationshipHealth'
 
 export default function Dashboard() {
   const { firebaseUser, profile, couple } = useAuth()
   const { partner, hasPartner } = usePartner()
   const today = todayStr()
 
-  const [tasks, setTasks] = useState([])
+  const [allTasks, setAllTasks] = useState([])
   const [events, setEvents] = useState([])
   const [jar, setJar] = useState([])
-  const [checkins, setCheckins] = useState([])
+  const [weekCheckins, setWeekCheckins] = useState([])
   const [pickedMood, setPickedMood] = useState(null)
   const [gratitude, setGratitude] = useState('')
   const [journal, setJournal] = useState('')
   const [photoData, setPhotoData] = useState(null)
   const [photoError, setPhotoError] = useState('')
   const [photoLoading, setPhotoLoading] = useState(false)
+  const [showHealthInfo, setShowHealthInfo] = useState(false)
   const photoInputRef = useRef(null)
 
   const coupleId = couple?.id
+  const sevenDaysAgo = dayjs().subtract(6, 'day').format('YYYY-MM-DD')
 
   useEffect(() => {
     if (!coupleId) return
     const unsubs = [
-      onSnapshot(query(collection(db, 'couples', coupleId, 'tasks'), where('done', '==', false)), (s) =>
-        setTasks(s.docs.map((d) => ({ id: d.id, ...d.data() })))
+      onSnapshot(collection(db, 'couples', coupleId, 'tasks'), (s) =>
+        setAllTasks(s.docs.map((d) => ({ id: d.id, ...d.data() })))
       ),
       onSnapshot(query(collection(db, 'couples', coupleId, 'events'), orderBy('date')), (s) =>
         setEvents(s.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.date >= today))
@@ -59,16 +63,69 @@ export default function Dashboard() {
       onSnapshot(collection(db, 'couples', coupleId, 'jar'), (s) =>
         setJar(s.docs.map((d) => ({ id: d.id, ...d.data() })))
       ),
-      onSnapshot(query(collection(db, 'couples', coupleId, 'checkins'), where('date', '==', today)), (s) =>
-        setCheckins(s.docs.map((d) => ({ id: d.id, ...d.data() })))
+      onSnapshot(
+        query(collection(db, 'couples', coupleId, 'checkins'), where('date', '>=', sevenDaysAgo)),
+        (s) => setWeekCheckins(s.docs.map((d) => ({ id: d.id, ...d.data() })))
       ),
     ]
     return () => unsubs.forEach((u) => u())
-  }, [coupleId, today])
+  }, [coupleId, today, sevenDaysAgo])
 
+  const tasks = allTasks.filter((t) => !t.done)
+  const checkins = weekCheckins.filter((c) => c.date === today)
   const myCheckin = checkins.find((c) => c.uid === firebaseUser.uid)
+  const partnerCheckin = checkins.find((c) => c.uid !== firebaseUser.uid)
   const lastJarNote = jar.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))[0]
   const anniversary = anniversaryInfo(profile?.anniversaryDate || partner?.anniversaryDate)
+
+  // --- Relationship Health inputs -----------------------------------
+  const sevenDaysAgoSeconds = dayjs().subtract(7, 'day').unix()
+
+  const weekCheckinDays = new Set(weekCheckins.map((c) => c.date)).size
+
+  const appreciationsLast7 = jar.filter((n) => (n.createdAt?.seconds || 0) >= sevenDaysAgoSeconds).length
+
+  const tasksDoneLast7 = allTasks.filter(
+    (t) => t.done && t.completedAt?.seconds >= sevenDaysAgoSeconds
+  ).length
+  const tasksTotalLast7 = allTasks.filter(
+    (t) =>
+      (t.done && t.completedAt?.seconds >= sevenDaysAgoSeconds) ||
+      (!t.done && t.createdAt?.seconds >= sevenDaysAgoSeconds)
+  ).length
+
+  const nextEvent = events[0] || null
+  const daysUntilNextEvent = nextEvent ? dayjs(nextEvent.date).diff(dayjs(today), 'day') : null
+
+  const health = computeRelationshipHealth({
+    weekCheckinDays,
+    streak: couple?.streak || 0,
+    appreciationsLast7,
+    tasksDoneLast7,
+    tasksTotalLast7,
+    daysUntilNextEvent,
+  })
+
+  const newAppreciationCount = jar.filter(
+    (n) => n.from !== firebaseUser.uid && (n.createdAt?.seconds || 0) >= dayjs().subtract(1, 'day').unix()
+  ).length
+
+  const todayTasks = allTasks.filter((t) => t.dueDate === today)
+  const todayGoalDone = todayTasks.filter((t) => t.done).length
+  const todayGoalTotal = todayTasks.length
+
+  function greeting() {
+    const h = dayjs().hour()
+    if (h < 12) return 'Good morning'
+    if (h < 18) return 'Good afternoon'
+    return 'Good evening'
+  }
+
+  function nextEventLabel(ev) {
+    const diff = dayjs(ev.date).diff(dayjs(today), 'day')
+    const day = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : friendlyDate(ev.date, today)
+    return ev.time ? `${day}, ${ev.time}` : day
+  }
 
   async function handlePhotoPick(e) {
     const file = e.target.files?.[0]
@@ -151,20 +208,101 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold mb-1">Hi {profile.displayName}</h1>
-        <p className="text-sm text-[#7a6a7c]">
-          {!hasPartner
-            ? 'Waiting for your partner to join with your invite code.'
-            : `You and ${partner?.displayName || '...'} — day ${couple?.streak || 0} of your streak.`}
-        </p>
-        {partner?.loveLanguage && (
-          <p className="text-xs text-[#9a8a9c] mt-1">
-            {partner.displayName || 'Your partner'}'s love language is{' '}
-            <span className="font-semibold text-plum">{partner.loveLanguage}</span>.
-          </p>
-        )}
-      </div>
+      {!hasPartner ? (
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold mb-1">
+            {greeting()}, {profile.displayName}
+          </h1>
+          <p className="text-sm text-[#7a6a7c]">Waiting for your partner to join with your invite code.</p>
+        </div>
+      ) : (
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-peach via-[#f5a3ae] to-gold p-5 sm:p-7 text-plumdeep mb-6">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-plumdeep/70">
+                {greeting()}, {profile.displayName}
+              </p>
+              <h1 className="text-xl sm:text-2xl font-semibold mt-0.5">
+                You &amp; {partner?.displayName || '...'} <span aria-hidden>❤️</span>
+              </h1>
+              {partner?.loveLanguage && (
+                <p className="text-xs text-plumdeep/70 mt-1">
+                  {partner.displayName || 'Your partner'}'s love language is{' '}
+                  <span className="font-semibold">{partner.loveLanguage}</span>
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowHealthInfo((v) => !v)}
+              className="text-right shrink-0"
+              aria-expanded={showHealthInfo}
+              aria-label="Show how relationship health is calculated"
+            >
+              <div className="flex items-center gap-1 justify-end">
+                <div className="text-3xl sm:text-4xl font-bold leading-none">{health.score}%</div>
+                <FiInfo size={14} className="text-plumdeep/60 mb-3" />
+              </div>
+              <div className="text-[10.5px] font-semibold uppercase tracking-wide text-plumdeep/70">
+                Relationship health
+              </div>
+            </button>
+          </div>
+
+          {showHealthInfo && (
+            <div className="mt-4 bg-white/70 rounded-2xl p-4 text-xs space-y-1.5">
+              <p className="font-semibold text-[13px] mb-1.5">How this is calculated</p>
+              {health.factors.map((f) => (
+                <div key={f.key} className="flex items-center justify-between">
+                  <span>{f.label}</span>
+                  <span className="font-semibold">{Math.round(f.value * 100)}%</span>
+                </div>
+              ))}
+              <p className="text-plumdeep/60 pt-1">A snapshot, not a grade — it moves with what you both do this week.</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-5">
+            <div className="bg-white/70 rounded-2xl p-3">
+              <div className="text-xl leading-none">🔥</div>
+              <div className="text-lg font-semibold mt-1">{couple?.streak || 0} Day{couple?.streak === 1 ? '' : 's'}</div>
+              <div className="text-[10.5px] text-plumdeep/70">Streak</div>
+            </div>
+
+            <div className="bg-white/70 rounded-2xl p-3">
+              <div className="text-xl leading-none">{MOODS.find((m) => m.v === partnerCheckin?.mood)?.e || '😊'}</div>
+              <div className="text-lg font-semibold mt-1">
+                {MOODS.find((m) => m.v === partnerCheckin?.mood)?.l || 'Not yet'}
+              </div>
+              <div className="text-[10.5px] text-plumdeep/70">{partner?.displayName || 'Partner'}'s mood</div>
+            </div>
+
+            <div className="bg-white/70 rounded-2xl p-3">
+              <div className="text-xl leading-none">💌</div>
+              <div className="text-lg font-semibold mt-1">{newAppreciationCount}</div>
+              <div className="text-[10.5px] text-plumdeep/70">New appreciation</div>
+            </div>
+
+            <div className="bg-white/70 rounded-2xl p-3">
+              <div className="text-xl leading-none">📅</div>
+              <div className="text-lg font-semibold mt-1">{nextEvent ? nextEventLabel(nextEvent) : 'None yet'}</div>
+              <div className="text-[10.5px] text-plumdeep/70">
+                {nextEvent ? nextEvent.title : 'Next date'}
+              </div>
+            </div>
+
+            <div className="bg-white/70 rounded-2xl p-3 col-span-2 sm:col-span-1">
+              <div className="text-xl leading-none">🎯</div>
+              <div className="text-lg font-semibold mt-1">
+                {todayGoalTotal === 0 ? '—' : `${todayGoalDone}/${todayGoalTotal}`}
+              </div>
+              <div className="text-[10.5px] text-plumdeep/70">
+                {todayGoalTotal === 0 ? "No tasks due today" : "Today's goal"}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white border border-black/10 rounded-2xl p-5">
