@@ -1,33 +1,42 @@
 import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import toast from 'react-hot-toast'
+import { ClipLoader } from 'react-spinners'
 import { useAuth } from '../context/AuthContext'
+import { profileSchema, zodResolver } from '../lib/schemas'
 
 export default function Profile() {
   const { profile, updateProfile } = useAuth()
+  const [serverErr, setServerErr] = useState('')
 
-  const [displayName, setDisplayName] = useState(profile?.displayName || '')
-  const [photoURL, setPhotoURL] = useState(profile?.photoURL || '')
-  const [anniversaryDate, setAnniversaryDate] = useState(profile?.anniversaryDate || '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      displayName: profile?.displayName || '',
+      photoURL: profile?.photoURL || '',
+      anniversaryDate: profile?.anniversaryDate || '',
+    },
+  })
 
-  async function handleSave(e) {
-    e.preventDefault()
-    setError('')
-    setSaved(false)
-    setSaving(true)
+  const displayName = watch('displayName')
+  const photoURL = watch('photoURL')
+
+  async function onSubmit(values) {
+    setServerErr('')
     try {
       await updateProfile({
-        displayName: displayName.trim(),
-        photoURL: photoURL.trim() || null,
-        anniversaryDate: anniversaryDate || null,
+        displayName: values.displayName.trim(),
+        photoURL: values.photoURL?.trim() || null,
+        anniversaryDate: values.anniversaryDate || null,
       })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
+      toast.success('Profile saved.')
     } catch (err) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
+      setServerErr(err.message)
     }
   }
 
@@ -53,17 +62,18 @@ export default function Profile() {
           </div>
         </div>
 
-        <form onSubmit={handleSave} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
           <div>
             <label className="block text-xs font-semibold text-[#7a6a7c] mb-1.5">
               Display name
             </label>
             <input
               className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              required
+              {...register('displayName')}
             />
+            {errors.displayName && (
+              <div className="text-xs text-[#9b3b3b] mt-1">{errors.displayName.message}</div>
+            )}
           </div>
 
           <div>
@@ -74,12 +84,14 @@ export default function Profile() {
               type="url"
               className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
               placeholder="https://..."
-              value={photoURL}
-              onChange={(e) => setPhotoURL(e.target.value)}
+              {...register('photoURL')}
             />
+            {errors.photoURL && (
+              <div className="text-xs text-[#9b3b3b] mt-1">{errors.photoURL.message}</div>
+            )}
             <p className="text-xs text-[#9a8a9c] mt-1">
               Paste a link to a photo hosted elsewhere (Google Photos share link, Imgur,
-              etc). Right-click any photo online → "Copy image address" usually gives you
+              etc). Right-click any photo online, then "Copy image address" usually gives you
               a link that works here.
             </p>
           </div>
@@ -91,31 +103,26 @@ export default function Profile() {
             <input
               type="date"
               className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-              value={anniversaryDate}
-              onChange={(e) => setAnniversaryDate(e.target.value)}
+              {...register('anniversaryDate')}
             />
             <p className="text-xs text-[#9a8a9c] mt-1">
               Powers the anniversary countdown on your dashboard.
             </p>
           </div>
 
-          {error && (
+          {serverErr && (
             <div className="text-sm text-[#9b3b3b] bg-[#fbe4e4] rounded-lg px-3.5 py-2.5">
-              {error}
-            </div>
-          )}
-          {saved && (
-            <div className="text-sm text-[#2f6d3f] bg-[#e5f3e8] rounded-lg px-3.5 py-2.5">
-              Saved.
+              {serverErr}
             </div>
           )}
 
           <button
             type="submit"
-            disabled={saving}
-            className="py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-60"
+            disabled={isSubmitting}
+            className="py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            {saving ? 'Saving...' : 'Save changes'}
+            {isSubmitting && <ClipLoader size={14} color="#3d2340" />}
+            {isSubmitting ? 'Saving' : 'Save changes'}
           </button>
         </form>
       </div>

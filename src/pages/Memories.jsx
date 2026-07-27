@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
+import toast from 'react-hot-toast'
+import { ClipLoader } from 'react-spinners'
 import { FiCamera } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
 import { compressImage } from '../utils/compressImage'
+import CropModal from '../components/CropModal'
 
 export default function Memories() {
   const { firebaseUser, couple } = useAuth()
@@ -17,6 +20,7 @@ export default function Memories() {
   const [photoLoading, setPhotoLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lightbox, setLightbox] = useState(null)
+  const [cropSrc, setCropSrc] = useState(null)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -28,7 +32,7 @@ export default function Memories() {
     return unsub
   }, [couple?.id])
 
-  async function handlePhotoPick(e) {
+  function handlePhotoPick(e) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
@@ -37,12 +41,19 @@ export default function Memories() {
       return
     }
     setPhotoError('')
+    // Open the crop dialog first — the actual compression happens once
+    // the person confirms their crop, in handleCropped below.
+    setCropSrc(URL.createObjectURL(file))
+  }
+
+  async function handleCropped(croppedFile) {
+    setCropSrc(null)
     setPhotoLoading(true)
     try {
       // A bit bigger than the chat/check-in default since memories are
       // meant to be looked back on — still well under Firestore's 1MB
       // document limit, so no Cloud Storage (and no billing plan) needed.
-      setPhotoData(await compressImage(file, { maxWidth: 1200, maxHeight: 1200, maxBytes: 900_000 }))
+      setPhotoData(await compressImage(croppedFile, { maxWidth: 1200, maxHeight: 1200, maxBytes: 900_000 }))
     } catch (err) {
       setPhotoError(err.message)
     } finally {
@@ -62,14 +73,22 @@ export default function Memories() {
       })
       setCaption('')
       setPhotoData(null)
+      toast.success('Memory saved.')
+    } catch (e) {
+      toast.error("Couldn't save that memory — try again.")
     } finally {
       setSaving(false)
     }
   }
 
   async function removeMemory(id) {
-    await deleteDoc(doc(db, 'couples', couple.id, 'memories', id))
-    setLightbox(null)
+    try {
+      await deleteDoc(doc(db, 'couples', couple.id, 'memories', id))
+      setLightbox(null)
+      toast.success('Memory deleted.')
+    } catch (e) {
+      toast.error("Couldn't delete that memory — try again.")
+    }
   }
 
   return (
@@ -78,6 +97,13 @@ export default function Memories() {
         <h1 className="text-2xl font-semibold mb-1">Memories</h1>
         <p className="text-sm text-[#7a6a7c]">A shared photo album for the moments you want to keep.</p>
       </div>
+
+      <CropModal
+        imageSrc={cropSrc}
+        aspect={4 / 3}
+        onCancel={() => setCropSrc(null)}
+        onCropped={handleCropped}
+      />
 
       <div className="bg-white border border-black/10 rounded-2xl p-5 mb-6">
         <h3 className="font-semibold mb-3">Add a memory</h3>
@@ -97,10 +123,24 @@ export default function Memories() {
             className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
           >
             <FiCamera size={14} />
-            {photoLoading ? 'Adding photo...' : 'Choose a photo'}
+            {photoLoading ? (
+              <>
+                <ClipLoader size={12} color="#3d2340" /> Adding photo
+              </>
+            ) : (
+              'Choose a photo'
+            )}
           </button>
         ) : (
-          <img src={photoData} alt="Preview" className="rounded-xl max-h-64 object-cover" />
+          <div>
+            <img src={photoData} alt="Preview" className="rounded-xl max-h-64 object-cover" />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="text-xs text-peach font-semibold mt-2"
+            >
+              Choose a different photo
+            </button>
+          </div>
         )}
         {photoError && <div className="text-xs text-[#9b3b3b] mt-1.5">{photoError}</div>}
 
@@ -117,9 +157,10 @@ export default function Memories() {
               <button
                 onClick={addMemory}
                 disabled={saving}
-                className="py-2.5 px-5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
+                className="flex items-center gap-2 py-2.5 px-5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
               >
-                {saving ? 'Saving...' : 'Save memory'}
+                {saving && <ClipLoader size={12} color="#3d2340" />}
+                {saving ? 'Saving' : 'Save memory'}
               </button>
               <button
                 onClick={() => {

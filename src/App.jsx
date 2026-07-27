@@ -1,6 +1,10 @@
-import { Route, Routes } from 'react-router-dom'
+import { Route, Routes, useLocation } from 'react-router-dom'
+import { AnimatePresence } from 'framer-motion'
+import { Toaster } from 'react-hot-toast'
 import ProtectedRoute from './components/ProtectedRoute'
 import Sidebar from './components/Sidebar'
+import BottomNav from './components/BottomNav'
+import PageTransition from './components/PageTransition'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -25,14 +29,36 @@ function AppLayout({ children }) {
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
-      <div className="flex-1 p-4 sm:p-6 md:p-9 max-w-full md:max-w-[980px] overflow-y-auto">{children}</div>
+      <div className="flex-1 p-4 sm:p-6 md:p-9 pb-24 md:pb-9 max-w-full md:max-w-[980px] overflow-y-auto">
+        <PageTransition>{children}</PageTransition>
+      </div>
+      <BottomNav />
     </div>
   )
 }
 
 export default function App() {
+  const location = useLocation()
+
   return (
-    <Routes>
+    <>
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          duration: 3200,
+          style: {
+            background: '#3d2340',
+            color: '#f3e6e8',
+            fontSize: '13.5px',
+            borderRadius: '12px',
+            padding: '10px 14px',
+          },
+          success: { iconTheme: { primary: '#e8b978', secondary: '#3d2340' } },
+          error: { iconTheme: { primary: '#d97a6a', secondary: '#3d2340' } },
+        }}
+      />
+      <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
@@ -145,5 +171,7 @@ export default function App() {
         }
       />
     </Routes>
+      </AnimatePresence>
+    </>
   )
 }

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import toast from 'react-hot-toast'
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { FiAward, FiMinus, FiPlus } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
@@ -27,24 +29,34 @@ export default function Goals() {
     if (!t || !coupleId) return
     setTitle('')
     setDescription('')
-    await addDoc(collection(db, 'couples', coupleId, 'goals'), {
-      title: t,
-      description: description.trim(),
-      targetDate: targetDate || null,
-      progress: 0,
-      done: false,
-      createdBy: firebaseUser.uid,
-      createdAt: serverTimestamp(),
-    })
-    setTargetDate('')
+    try {
+      await addDoc(collection(db, 'couples', coupleId, 'goals'), {
+        title: t,
+        description: description.trim(),
+        targetDate: targetDate || null,
+        progress: 0,
+        done: false,
+        createdBy: firebaseUser.uid,
+        createdAt: serverTimestamp(),
+      })
+      setTargetDate('')
+    } catch (e) {
+      setTitle(t)
+      toast.error("Couldn't add that goal — try again.")
+    }
   }
 
   async function setProgress(goal, progress) {
     const clamped = Math.max(0, Math.min(100, progress))
-    await updateDoc(doc(db, 'couples', coupleId, 'goals', goal.id), {
-      progress: clamped,
-      done: clamped === 100,
-    })
+    try {
+      await updateDoc(doc(db, 'couples', coupleId, 'goals', goal.id), {
+        progress: clamped,
+        done: clamped === 100,
+      })
+      if (clamped === 100 && !goal.done) toast.success(`"${goal.title}" — goal complete!`)
+    } catch (e) {
+      toast.error("Couldn't update progress — try again.")
+    }
   }
 
   const activeGoals = useMemo(() => goals.filter((g) => !g.done), [goals])
@@ -56,6 +68,41 @@ export default function Goals() {
         <h1 className="text-2xl font-semibold mb-1">Goals</h1>
         <p className="text-sm text-[#7a6a7c]">The bigger things you're working toward together.</p>
       </div>
+
+      {activeGoals.length > 0 && (
+        <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
+          <h3 className="font-semibold mb-4 text-sm text-[#7a6a7c]">Progress overview</h3>
+          <div style={{ height: Math.max(120, activeGoals.length * 46) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={activeGoals.map((g) => ({ name: g.title, progress: g.progress || 0 }))}
+                layout="vertical"
+                margin={{ top: 0, right: 20, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#00000010" horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11, fill: '#9a8a9c' }} axisLine={false} tickLine={false} />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={140}
+                  tick={{ fontSize: 12, fill: '#3d2340' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  contentStyle={{ borderRadius: 10, border: '1px solid #00000015', fontSize: 12 }}
+                  formatter={(v) => [`${v}%`, 'Progress']}
+                />
+                <Bar dataKey="progress" radius={[0, 6, 6, 0]} barSize={16}>
+                  {activeGoals.map((g, i) => (
+                    <Cell key={i} fill={(g.progress || 0) >= 70 ? '#e8b978' : '#f0c9b0'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
         <h3 className="font-semibold mb-3">In progress</h3>

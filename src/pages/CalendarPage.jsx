@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import dayjs from 'dayjs'
 import {
   addDoc,
   collection,
@@ -16,6 +17,19 @@ import { FiBell, FiRepeat, FiX } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
+import { todayStr } from '../utils/date'
+import MonthCalendarGrid from '../components/MonthCalendarGrid'
+import DayDetailPanel from '../components/DayDetailPanel'
+
+// Firestore returns Timestamp objects for fields written with
+// serverTimestamp()/new Date(). This normalizes either shape to 'YYYY-MM-DD'
+// so memories/tasks/notes can be bucketed onto the same grid as events.
+function tsToDateStr(ts) {
+  if (!ts) return null
+  if (typeof ts.toDate === 'function') return dayjs(ts.toDate()).format('YYYY-MM-DD')
+  if (ts instanceof Date) return dayjs(ts).format('YYYY-MM-DD')
+  return null
+}
 
 const TOPUP_DAYS = 90 // keep recurring events generated 3 months ahead
 
@@ -36,10 +50,6 @@ const REMINDER_OPTIONS = [
 ]
 
 const RECUR_BADGE = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' }
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10)
-}
 
 function advance(dateObj, freq) {
   const d = new Date(dateObj)
@@ -82,7 +92,13 @@ export default function CalendarPage() {
   const { firebaseUser, couple } = useAuth()
   const coupleId = couple?.id
   const [events, setEvents] = useState([])
+  const [tasks, setTasks] = useState([])
+  const [memories, setMemories] = useState([])
+  const [jarNotes, setJarNotes] = useState([])
   const names = useMemberNames(couple?.members)
+
+  const [month, setMonth] = useState(dayjs())
+  const [selectedDate, setSelectedDate] = useState(todayStr())
 
   const [date, setDate] = useState(todayStr())
   const [time, setTime] = useState('')
@@ -99,6 +115,25 @@ export default function CalendarPage() {
     const q = query(collection(db, 'couples', coupleId, 'events'), orderBy('date'))
     const unsub = onSnapshot(q, (snap) => setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))))
     return unsub
+  }, [coupleId])
+
+  // --- Load tasks, memories, and jar notes for the day-highlights grid ---
+  useEffect(() => {
+    if (!coupleId) return
+    const unsubTasks = onSnapshot(collection(db, 'couples', coupleId, 'tasks'), (snap) =>
+      setTasks(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    )
+    const unsubMemories = onSnapshot(collection(db, 'couples', coupleId, 'memories'), (snap) =>
+      setMemories(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    )
+    const unsubJar = onSnapshot(collection(db, 'couples', coupleId, 'jar'), (snap) =>
+      setJarNotes(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    )
+    return () => {
+      unsubTasks()
+      unsubMemories()
+      unsubJar()
+    }
   }, [coupleId])
 
   // --- Keep recurring series topped up to a rolling 3-month window ---
@@ -255,12 +290,51 @@ export default function CalendarPage() {
 
   const sortedDates = Object.keys(groupedByDate).sort()
 
+  const dayData = useMemo(() => {
+    const map = {}
+    const bucket = (dStr) => {
+      if (!dStr) return null
+      if (!map[dStr]) map[dStr] = { events: [], tasks: [], memories: [], notes: [] }
+      return map[dStr]
+    }
+    events.forEach((ev) => bucket(ev.date)?.events.push(ev))
+    tasks.forEach((t) => bucket(t.dueDate)?.tasks.push(t))
+    memories.forEach((m) => bucket(tsToDateStr(m.createdAt))?.memories.push(m))
+    jarNotes.forEach((n) => bucket(tsToDateStr(n.createdAt))?.notes.push(n))
+    return map
+  }, [events, tasks, memories, jarNotes])
+
+  const selectedDayInfo = dayData[selectedDate] || { events: [], tasks: [], memories: [], notes: [] }
+
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold mb-1">Shared calendar</h1>
         <p className="text-sm text-[#7a6a7c]">Plan dates, drop reminders, leave a love note on any day.</p>
       </div>
+
+      <MonthCalendarGrid
+        month={month}
+        selectedDate={selectedDate}
+        onSelectDate={(d) => {
+          setSelectedDate(d)
+          setDate(d)
+        }}
+        onPrevMonth={() => setMonth((m) => m.subtract(1, 'month'))}
+        onNextMonth={() => setMonth((m) => m.add(1, 'month'))}
+        dayData={dayData}
+        todayStr={todayStr()}
+      />
+
+      <DayDetailPanel
+        dateStr={selectedDate}
+        todayStr={todayStr()}
+        events={selectedDayInfo.events}
+        tasks={selectedDayInfo.tasks}
+        memories={selectedDayInfo.memories}
+        notes={selectedDayInfo.notes}
+        names={names}
+      />
 
       {upcomingReminders.length > 0 && (
         <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
@@ -287,6 +361,7 @@ export default function CalendarPage() {
       )}
 
       <div className="bg-white border border-black/10 rounded-2xl p-5">
+        <h3 className="font-semibold mb-3">All events</h3>
         {sortedDates.length === 0 && (
           <div className="text-sm text-[#a892a9] py-2.5">Nothing on the calendar yet.</div>
         )}

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   FiCalendar,
@@ -16,6 +15,7 @@ import {
 } from 'react-icons/fi'
 import { FaFire } from 'react-icons/fa'
 import { useAuth } from '../context/AuthContext'
+import { useUIStore } from '../store/uiStore'
 import Logo from './Logo'
 
 const items = [
@@ -33,6 +33,12 @@ const secondaryItems = [
   ['/profile', FiUser, 'Profile'],
   ['/settings', FiSettings, 'Settings'],
 ]
+
+// Home/Chat/Tasks/Memories/Profile already have one-tap access from the
+// mobile BottomNav, so the hamburger menu only needs to surface the rest.
+const mobileOverflowItems = items.filter(
+  ([to]) => !['/dashboard', '/chat', '/tasks', '/memories'].includes(to)
+)
 
 function NavItem({ to, Icon, label, end, onClick }) {
   return (
@@ -56,7 +62,9 @@ function NavItem({ to, Icon, label, end, onClick }) {
 
 export default function Sidebar() {
   const { logout, couple, profile } = useAuth()
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const mobileOpen = useUIStore((s) => s.mobileNavOpen)
+  const setMobileOpen = useUIStore((s) => s.setMobileNavOpen)
+  const toggleMobileOpen = useUIStore((s) => s.toggleMobileNav)
 
   return (
     <>
@@ -83,20 +91,17 @@ export default function Sidebar() {
       {/* Mobile dropdown menu — shown in normal flow, pushes content down */}
       {mobileOpen && (
         <div className="md:hidden bg-plumdeep text-[#f3e6e8] px-4 pb-4 flex flex-col gap-1 border-t border-white/10">
-          {items.map(([to, Icon, label]) => (
+          {mobileOverflowItems.map(([to, Icon, label]) => (
             <NavItem
               key={to}
               to={to}
               Icon={Icon}
               label={label}
-              end={to === '/dashboard'}
               onClick={() => setMobileOpen(false)}
             />
           ))}
           <div className="mt-2 pt-2 border-t border-white/10 flex flex-col gap-1">
-            {secondaryItems.map(([to, Icon, label]) => (
-              <NavItem key={to} to={to} Icon={Icon} label={label} onClick={() => setMobileOpen(false)} />
-            ))}
+            <NavItem to="/settings" Icon={FiSettings} label="Settings" onClick={() => setMobileOpen(false)} />
           </div>
           <button
             onClick={logout}

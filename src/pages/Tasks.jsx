@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import dayjs from 'dayjs'
+import toast from 'react-hot-toast'
 import { FiCheck } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { useMemberNames } from '../hooks/useMemberNames'
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10)
-}
+import { todayStr } from '../utils/date'
+import { useUIStore } from '../store/uiStore'
 
 export default function Tasks() {
   const { firebaseUser, couple } = useAuth()
@@ -20,6 +20,8 @@ export default function Tasks() {
   const [text, setText] = useState('')
   const [assignee, setAssignee] = useState('either') // 'either' | 'me' | 'partner'
   const [dueDate, setDueDate] = useState('')
+  const taskFilter = useUIStore((s) => s.taskFilter)
+  const setTaskFilter = useUIStore((s) => s.setTaskFilter)
 
   useEffect(() => {
     if (!coupleId) return
@@ -33,25 +35,34 @@ export default function Tasks() {
     if (!t || !coupleId) return
     setText('')
     const assignedTo = assignee === 'me' ? firebaseUser.uid : assignee === 'partner' ? partnerUid : null
-    await addDoc(collection(db, 'couples', coupleId, 'tasks'), {
-      text: t,
-      assignedTo,
-      dueDate: dueDate || null,
-      done: false,
-      completedBy: null,
-      completedAt: null,
-      createdBy: firebaseUser.uid,
-      createdAt: serverTimestamp(),
-    })
-    setDueDate('')
+    try {
+      await addDoc(collection(db, 'couples', coupleId, 'tasks'), {
+        text: t,
+        assignedTo,
+        dueDate: dueDate || null,
+        done: false,
+        completedBy: null,
+        completedAt: null,
+        createdBy: firebaseUser.uid,
+        createdAt: serverTimestamp(),
+      })
+      setDueDate('')
+    } catch (e) {
+      setText(t)
+      toast.error("Couldn't add that task — try again.")
+    }
   }
 
   async function toggle(task) {
     const ref = doc(db, 'couples', coupleId, 'tasks', task.id)
-    if (task.done) {
-      await updateDoc(ref, { done: false, completedAt: null, completedBy: null })
-    } else {
-      await updateDoc(ref, { done: true, completedAt: serverTimestamp(), completedBy: firebaseUser.uid })
+    try {
+      if (task.done) {
+        await updateDoc(ref, { done: false, completedAt: null, completedBy: null })
+      } else {
+        await updateDoc(ref, { done: true, completedAt: serverTimestamp(), completedBy: firebaseUser.uid })
+      }
+    } catch (e) {
+      toast.error("Couldn't update that task — try again.")
     }
   }
 
@@ -64,13 +75,18 @@ export default function Tasks() {
   const openTasks = useMemo(() => {
     return tasks
       .filter((t) => !t.done)
+      .filter((t) => {
+        if (taskFilter === 'mine') return t.assignedTo === firebaseUser.uid
+        if (taskFilter === 'partner') return t.assignedTo && t.assignedTo === partnerUid
+        return true
+      })
       .sort((a, b) => {
         if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate)
         if (a.dueDate) return -1
         if (b.dueDate) return 1
         return 0
       })
-  }, [tasks])
+  }, [tasks, taskFilter, firebaseUser.uid, partnerUid])
 
   const completedTasks = useMemo(() => {
     return tasks
@@ -86,9 +102,30 @@ export default function Tasks() {
       </div>
 
       <div className="bg-white border border-black/10 rounded-2xl p-5">
-        <h3 className="font-semibold mb-3">To do</h3>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <h3 className="font-semibold">To do</h3>
+          <div className="flex items-center gap-1 bg-black/5 rounded-lg p-1">
+            {[
+              ['all', 'All'],
+              ['mine', 'Mine'],
+              ['partner', partner?.displayName || 'Partner'],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setTaskFilter(value)}
+                className={`text-xs font-semibold px-2.5 py-1.5 rounded-md transition-colors ${
+                  taskFilter === value ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         {openTasks.length === 0 && (
-          <div className="text-sm text-[#a892a9] py-2.5">No open tasks — add one below.</div>
+          <div className="text-sm text-[#a892a9] py-2.5">
+            {taskFilter === 'all' ? 'No open tasks — add one below.' : 'No tasks match this filter.'}
+          </div>
         )}
         {openTasks.map((t) => {
           const overdue = t.dueDate && t.dueDate < todayStr()
@@ -179,7 +216,7 @@ export default function Tasks() {
                 <div className="line-through opacity-50">{t.text}</div>
                 <div className="text-xs text-[#9a8a9c] mt-1">
                   completed by {t.completedBy === firebaseUser.uid ? 'you' : names[t.completedBy] || '...'}
-                  {t.completedAt?.toDate ? ` on ${t.completedAt.toDate().toISOString().slice(0, 10)}` : ''}
+                  {t.completedAt?.toDate ? ` on ${dayjs(t.completedAt.toDate()).format('YYYY-MM-DD')}` : ''}
                 </div>
               </div>
             </div>

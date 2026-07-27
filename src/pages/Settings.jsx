@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { doc, setDoc } from 'firebase/firestore'
+import { useForm } from 'react-hook-form'
+import toast from 'react-hot-toast'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { useLinkCouple } from '../hooks/useLinkCouple'
+import { joinCodeSchema, zodResolver } from '../lib/schemas'
 
 const NOTIF_OPTIONS = [
   ['notifyChat', 'New messages'],
@@ -28,11 +31,17 @@ export default function Settings() {
 
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
-  const [joinCode, setJoinCode] = useState('')
   const [joining, setJoining] = useState(false)
   const [joinError, setJoinError] = useState('')
   const [codeCopied, setCodeCopied] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+
+  const {
+    register: registerJoin,
+    handleSubmit: handleJoinSubmit,
+    reset: resetJoinForm,
+    formState: { errors: joinFieldErrors },
+  } = useForm({ resolver: zodResolver(joinCodeSchema), defaultValues: { joinCode: '' } })
 
   // You can be in one of three states here:
   //  - fully linked: `couple` exists AND has a partner
@@ -53,6 +62,7 @@ export default function Settings() {
     try {
       await resetPassword(profile.email)
       setResetSent(true)
+      toast.success('Reset email sent.')
     } catch (err) {
       setResetError(err.message)
     }
@@ -95,13 +105,13 @@ export default function Settings() {
     }
   }
 
-  async function handleJoin(e) {
-    e.preventDefault()
+  async function handleJoin(values) {
     setJoining(true)
     setJoinError('')
     try {
-      await joinWithCode(joinCode)
-      setJoinCode('')
+      await joinWithCode(values.joinCode)
+      resetJoinForm()
+      toast.success('Linked up!')
     } catch (err) {
       setJoinError(err.message)
     } finally {
@@ -114,9 +124,10 @@ export default function Settings() {
     try {
       await navigator.clipboard.writeText(couple.inviteCode)
       setCodeCopied(true)
+      toast.success('Invite code copied.')
       setTimeout(() => setCodeCopied(false), 2000)
     } catch {
-      // clipboard API can fail (permissions, non-secure context) — no big deal
+      toast.error("Couldn't copy — select and copy it manually.")
     }
   }
 
@@ -257,27 +268,29 @@ export default function Settings() {
 
               <div className="h-px bg-black/10" />
 
-              <form onSubmit={handleJoin}>
+              <form onSubmit={handleJoinSubmit(handleJoin)} noValidate>
                 <div className="text-xs font-semibold text-[#9a8a9c] mb-1.5 uppercase tracking-wide">
                   Invite code from your partner
                 </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
-                    value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                     placeholder="e.g. 8K3PQZ"
                     maxLength={12}
-                    className="flex-1 font-mono text-lg tracking-[0.2em] bg-white border border-black/10 rounded-xl px-4 py-2.5 focus:outline-none focus:border-peach"
+                    className="flex-1 font-mono text-lg tracking-[0.2em] bg-white border border-black/10 rounded-xl px-4 py-2.5 focus:outline-none focus:border-peach uppercase"
+                    {...registerJoin('joinCode')}
                   />
                   <button
                     type="submit"
-                    disabled={joining || !joinCode.trim()}
+                    disabled={joining}
                     className="text-sm font-semibold px-4 py-2.5 rounded-xl bg-peach text-white disabled:opacity-60"
                   >
                     {joining ? 'Linking...' : 'Link accounts'}
                   </button>
                 </div>
+                {joinFieldErrors.joinCode && (
+                  <div className="text-sm text-[#9b3b3b] mt-2.5">{joinFieldErrors.joinCode.message}</div>
+                )}
                 {joinError && <div className="text-sm text-[#9b3b3b] mt-2.5">{joinError}</div>}
               </form>
             </div>

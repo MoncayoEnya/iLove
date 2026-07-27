@@ -24,31 +24,7 @@ import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { compressImage } from '../utils/compressImage'
 import { MOODS } from '../utils/moods'
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-// Given "YYYY-MM-DD", returns years together so far and days until the
-// next anniversary (0 = today).
-function anniversaryInfo(dateStr) {
-  if (!dateStr) return null
-  const start = new Date(dateStr + 'T00:00:00')
-  if (Number.isNaN(start.getTime())) return null
-
-  const now = new Date()
-  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-
-  let next = new Date(todayMidnight.getFullYear(), start.getMonth(), start.getDate())
-  if (next < todayMidnight) {
-    next = new Date(todayMidnight.getFullYear() + 1, start.getMonth(), start.getDate())
-  }
-
-  const years = next.getFullYear() - start.getFullYear()
-  const daysUntil = Math.round((next - todayMidnight) / 86400000)
-
-  return { years, daysUntil }
-}
+import { anniversaryInfo, todayStr } from '../utils/date'
 
 export default function Dashboard() {
   const { firebaseUser, profile, couple } = useAuth()

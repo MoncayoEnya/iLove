@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { addDoc, collection, onSnapshot } from 'firebase/firestore'
+import toast from 'react-hot-toast'
 import { FiHeart } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
@@ -22,12 +23,19 @@ export default function LoveJar() {
 
   async function addNote() {
     if (!text.trim()) return
-    await addDoc(collection(db, 'couples', couple.id, 'jar'), {
-      text: text.trim(),
-      from: firebaseUser.uid,
-      createdAt: new Date(),
-    })
+    const t = text.trim()
     setText('')
+    try {
+      await addDoc(collection(db, 'couples', couple.id, 'jar'), {
+        text: t,
+        from: firebaseUser.uid,
+        createdAt: new Date(),
+      })
+      toast.success('Dropped in the jar.')
+    } catch (e) {
+      setText(t)
+      toast.error("Couldn't save that note — try again.")
+    }
   }
 
   function openJar() {
