@@ -12,6 +12,7 @@ import { useLinkCouple } from '../hooks/useLinkCouple'
 import { useMemberNames } from '../hooks/useMemberNames'
 import { joinCodeSchema, zodResolver } from '../lib/schemas'
 import { fetchCoupleData, downloadJSON, downloadHTML, buildReadableHTML } from '../utils/exportData'
+import PrivacySettings from '../components/PrivacySettings'
 
 const NOTIF_OPTIONS = [
   ['notifyChat', 'New messages'],
@@ -209,6 +210,8 @@ export default function Settings() {
             </button>
           </div>
         </div>
+
+        <PrivacySettings />
 
         {/* Notifications */}
         <div className="bg-white border border-black/10 rounded-2xl p-5">

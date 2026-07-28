@@ -3,7 +3,17 @@ import { motion } from 'framer-motion'
 import { FiChevronLeft, FiChevronRight, FiHeart } from 'react-icons/fi'
 
 // dayData: { 'YYYY-MM-DD': { events: [], tasks: [], memories: [], notes: [] } }
-export default function MonthCalendarGrid({ month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, dayData, todayStr }) {
+// When mode="mood", dayData is instead { 'YYYY-MM-DD': { mine: {emoji,label}|null, theirs: {emoji,label}|null } }
+export default function MonthCalendarGrid({
+  month,
+  selectedDate,
+  onSelectDate,
+  onPrevMonth,
+  onNextMonth,
+  dayData,
+  todayStr,
+  mode = 'events',
+}) {
   const startOfMonth = month.startOf('month')
   const endOfMonth = month.endOf('month')
   const gridStart = startOfMonth.startOf('week')
@@ -51,7 +61,7 @@ export default function MonthCalendarGrid({ month, selectedDate, onSelectDate, o
           const isToday = dStr === todayStr
           const isSelected = dStr === selectedDate
           const info = dayData[dStr]
-          const thumb = info?.memories?.[0]?.photoData
+          const thumb = mode === 'events' ? info?.memories?.[0]?.photoData : null
 
           return (
             <motion.button
@@ -66,7 +76,17 @@ export default function MonthCalendarGrid({ month, selectedDate, onSelectDate, o
                   : 'border-black/5'
               } ${inMonth ? '' : 'opacity-35'}`}
             >
-              {thumb ? (
+              {mode === 'mood' ? (
+                <>
+                  <span className={`text-[10px] leading-none mb-0.5 ${isToday ? 'text-peach font-bold' : 'text-ink'}`}>
+                    {d.date()}
+                  </span>
+                  <span className="flex items-center gap-0.5 leading-none">
+                    <span title={info?.mine?.label || 'No check-in'}>{info?.mine?.emoji || '·'}</span>
+                    <span title={info?.theirs?.label || 'No check-in'}>{info?.theirs?.emoji || '·'}</span>
+                  </span>
+                </>
+              ) : thumb ? (
                 <>
                   <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/35" />
@@ -76,7 +96,7 @@ export default function MonthCalendarGrid({ month, selectedDate, onSelectDate, o
                 <span className={isToday ? 'text-peach font-bold' : 'text-ink'}>{d.date()}</span>
               )}
 
-              {(info?.events?.length > 0 || info?.tasks?.length > 0 || info?.notes?.length > 0) && (
+              {mode === 'events' && (info?.events?.length > 0 || info?.tasks?.length > 0 || info?.notes?.length > 0) && (
                 <div className="absolute bottom-1 flex items-center gap-0.5 z-10">
                   {info?.events?.length > 0 && (
                     <span className="w-1.5 h-1.5 rounded-full bg-gold shadow-sm" title="Event" />

@@ -17,10 +17,17 @@ import { FiBell, FiCalendar, FiRepeat, FiX } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
+import { usePartner } from '../hooks/usePartner'
 import { todayStr } from '../utils/date'
+import { MOODS } from '../utils/moods'
 import MonthCalendarGrid from '../components/MonthCalendarGrid'
 import DayDetailPanel from '../components/DayDetailPanel'
+import MoodDayDetail from '../components/MoodDayDetail'
 import EmptyState from '../components/EmptyState'
+
+function moodInfo(v) {
+  return MOODS.find((m) => m.v === v)
+}
 
 // Firestore returns Timestamp objects for fields written with
 // serverTimestamp()/new Date(). This normalizes either shape to 'YYYY-MM-DD'
@@ -91,11 +98,14 @@ function formatCountdown(targetMs) {
 
 export default function CalendarPage() {
   const { firebaseUser, couple } = useAuth()
+  const { partnerUid } = usePartner()
   const coupleId = couple?.id
   const [events, setEvents] = useState([])
   const [tasks, setTasks] = useState([])
   const [memories, setMemories] = useState([])
   const [jarNotes, setJarNotes] = useState([])
+  const [checkins, setCheckins] = useState([])
+  const [view, setView] = useState('events') // 'events' | 'mood'
   const names = useMemberNames(couple?.members)
 
   const [month, setMonth] = useState(dayjs())
@@ -130,10 +140,14 @@ export default function CalendarPage() {
     const unsubJar = onSnapshot(collection(db, 'couples', coupleId, 'jar'), (snap) =>
       setJarNotes(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     )
+    const unsubCheckins = onSnapshot(collection(db, 'couples', coupleId, 'checkins'), (snap) =>
+      setCheckins(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    )
     return () => {
       unsubTasks()
       unsubMemories()
       unsubJar()
+      unsubCheckins()
     }
   }, [coupleId])
 
@@ -307,11 +321,44 @@ export default function CalendarPage() {
 
   const selectedDayInfo = dayData[selectedDate] || { events: [], tasks: [], memories: [], notes: [] }
 
+  const moodDayData = useMemo(() => {
+    const map = {}
+    for (const c of checkins) {
+      if (!map[c.date]) map[c.date] = { mine: null, theirs: null }
+      const info = moodInfo(c.mood)
+      if (!info) continue
+      if (c.uid === firebaseUser.uid) map[c.date].mine = { emoji: info.e, label: info.l }
+      else if (c.uid === partnerUid) map[c.date].theirs = { emoji: info.e, label: info.l }
+    }
+    return map
+  }, [checkins, firebaseUser.uid, partnerUid])
+
+  const selectedMoodInfo = moodDayData[selectedDate] || { mine: null, theirs: null }
+
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold mb-1">Shared calendar</h1>
         <p className="text-sm text-[#7a6a7c]">Plan dates, drop reminders, leave a love note on any day.</p>
+      </div>
+
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setView('events')}
+          className={`text-sm font-semibold px-4 py-2 rounded-xl border ${
+            view === 'events' ? 'bg-gradient-to-br from-peach to-gold text-plumdeep border-transparent' : 'border-black/10'
+          }`}
+        >
+          Events
+        </button>
+        <button
+          onClick={() => setView('mood')}
+          className={`text-sm font-semibold px-4 py-2 rounded-xl border ${
+            view === 'mood' ? 'bg-gradient-to-br from-peach to-gold text-plumdeep border-transparent' : 'border-black/10'
+          }`}
+        >
+          Mood
+        </button>
       </div>
 
       <MonthCalendarGrid
@@ -323,21 +370,34 @@ export default function CalendarPage() {
         }}
         onPrevMonth={() => setMonth((m) => m.subtract(1, 'month'))}
         onNextMonth={() => setMonth((m) => m.add(1, 'month'))}
-        dayData={dayData}
+        dayData={view === 'mood' ? moodDayData : dayData}
         todayStr={todayStr()}
+        mode={view}
       />
 
-      <DayDetailPanel
-        dateStr={selectedDate}
-        todayStr={todayStr()}
-        events={selectedDayInfo.events}
-        tasks={selectedDayInfo.tasks}
-        memories={selectedDayInfo.memories}
-        notes={selectedDayInfo.notes}
-        names={names}
-      />
+      {view === 'mood' ? (
+        <MoodDayDetail
+          dateStr={selectedDate}
+          todayStr={todayStr()}
+          mine={selectedMoodInfo.mine}
+          theirs={selectedMoodInfo.theirs}
+          names={names}
+          firebaseUser={firebaseUser}
+          partnerUid={partnerUid}
+        />
+      ) : (
+        <DayDetailPanel
+          dateStr={selectedDate}
+          todayStr={todayStr()}
+          events={selectedDayInfo.events}
+          tasks={selectedDayInfo.tasks}
+          memories={selectedDayInfo.memories}
+          notes={selectedDayInfo.notes}
+          names={names}
+        />
+      )}
 
-      {upcomingReminders.length > 0 && (
+      {view === 'events' && upcomingReminders.length > 0 && (
         <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <FiBell size={16} className="text-peach" /> Upcoming reminders
@@ -361,6 +421,7 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {view === 'events' && (
       <div className="bg-white border border-black/10 rounded-2xl p-5">
         <h3 className="font-semibold mb-3">All events</h3>
         {sortedDates.length === 0 && (
@@ -525,6 +586,7 @@ export default function CalendarPage() {
           </button>
         </div>
       </div>
+      )}
     </div>
   )
 }

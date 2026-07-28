@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
   arrayRemove,
@@ -11,21 +11,71 @@ import {
   query,
   updateDoc,
 } from 'firebase/firestore'
+import dayjs from 'dayjs'
 import toast from 'react-hot-toast'
 import { ClipLoader } from 'react-spinners'
-import { FiCamera, FiImage, FiHeart, FiSearch, FiTag, FiX } from 'react-icons/fi'
+import {
+  FiCalendar,
+  FiCamera,
+  FiCompass,
+  FiGift,
+  FiGrid,
+  FiHeart,
+  FiImage,
+  FiList,
+  FiMusic,
+  FiSearch,
+  FiStar,
+  FiTag,
+  FiX,
+} from 'react-icons/fi'
+import { FaFire } from 'react-icons/fa'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
 import { compressImage } from '../utils/compressImage'
+import { friendlyDate, todayStr } from '../utils/date'
 import CropModal from '../components/CropModal'
 import EmptyState from '../components/EmptyState'
+
+// Milestone types a person can log by hand. "Streak" milestones are instead
+// generated automatically below, never added manually here.
+const MILESTONE_TYPES = [
+  { key: 'first_date', label: 'First date', icon: FiStar, color: '#d9a06a' },
+  { key: 'anniversary', label: 'Anniversary', icon: FiHeart, color: '#d97a6a' },
+  { key: 'birthday', label: 'Birthday', icon: FiGift, color: '#e8b978' },
+  { key: 'vacation', label: 'Trip / vacation', icon: FiCompass, color: '#7a9c8a' },
+  { key: 'song', label: 'Favorite song', icon: FiMusic, color: '#a892a9' },
+  { key: 'other', label: 'Other milestone', icon: FiStar, color: '#9a8a9c' },
+]
+const STREAK_MILESTONE = { key: 'streak', label: 'Streak', icon: FaFire, color: '#e07a52' }
+const STREAK_THRESHOLDS = [7, 30, 50, 100, 200, 365, 500, 750, 1000]
+
+function milestoneMeta(milestoneType) {
+  if (milestoneType === 'streak') return STREAK_MILESTONE
+  return MILESTONE_TYPES.find((m) => m.key === milestoneType) || MILESTONE_TYPES[MILESTONE_TYPES.length - 1]
+}
+
+// Firestore returns a Timestamp for createdAt on synced docs, or a plain JS
+// Date right after a local write before the round trip completes. This
+// normalizes either shape to 'YYYY-MM-DD' so entries can be grouped by day.
+function entryDateStr(entry) {
+  if (entry.date) return entry.date
+  const ts = entry.createdAt
+  if (!ts) return null
+  if (typeof ts.toDate === 'function') return dayjs(ts.toDate()).format('YYYY-MM-DD')
+  if (ts instanceof Date) return dayjs(ts).format('YYYY-MM-DD')
+  return null
+}
 
 export default function Memories() {
   const { firebaseUser, couple } = useAuth()
   const names = useMemberNames(couple?.members)
 
   const [memories, setMemories] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [layout, setLayout] = useState('timeline') // 'timeline' | 'grid'
+
   const [caption, setCaption] = useState('')
   const [tagsInput, setTagsInput] = useState('')
   const [search, setSearch] = useState('')
@@ -39,14 +89,57 @@ export default function Memories() {
   const [cropSrc, setCropSrc] = useState(null)
   const fileInputRef = useRef(null)
 
+  // Add-entry form: photo (default, existing flow) or a hand-logged milestone.
+  const [entryMode, setEntryMode] = useState('photo') // 'photo' | 'milestone'
+  const [milestoneType, setMilestoneType] = useState('first_date')
+  const [milestoneTitle, setMilestoneTitle] = useState('')
+  const [milestoneDate, setMilestoneDate] = useState(todayStr())
+  const [milestoneSaving, setMilestoneSaving] = useState(false)
+
   useEffect(() => {
     if (!couple?.id) return
     const unsub = onSnapshot(
       query(collection(db, 'couples', couple.id, 'memories'), orderBy('createdAt', 'desc')),
-      (snap) => setMemories(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+      (snap) => {
+        setMemories(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+        setLoading(false)
+      }
     )
     return unsub
   }, [couple?.id])
+
+  // --- Auto-generate a streak milestone the first time the couple crosses
+  // each threshold. Self-contained: reads couple.streak (already tracked by
+  // the dashboard) and writes into this same memories collection, guarded
+  // against duplicates by checking what's already there.
+  useEffect(() => {
+    if (!couple?.id || loading) return
+    const streak = couple.streak || 0
+    const already = new Set(
+      memories.filter((m) => m.entryType === 'milestone' && m.milestoneType === 'streak').map((m) => m.streakValue)
+    )
+    const nextThreshold = [...STREAK_THRESHOLDS].reverse().find((t) => streak >= t && !already.has(t))
+    if (!nextThreshold) return
+    ;(async () => {
+      try {
+        await addDoc(collection(db, 'couples', couple.id, 'memories'), {
+          entryType: 'milestone',
+          milestoneType: 'streak',
+          streakValue: nextThreshold,
+          title: `${nextThreshold} Day Streak`,
+          date: todayStr(),
+          caption: '',
+          tags: [],
+          from: firebaseUser.uid,
+          auto: true,
+          createdAt: new Date(),
+        })
+      } catch (e) {
+        // Silent — this is a background nicety, not worth surfacing an error toast for.
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couple?.id, couple?.streak, loading, memories.length])
 
   function handlePhotoPick(e) {
     const file = e.target.files?.[0]
@@ -57,8 +150,6 @@ export default function Memories() {
       return
     }
     setPhotoError('')
-    // Open the crop dialog first — the actual compression happens once
-    // the person confirms their crop, in handleCropped below.
     setCropSrc(URL.createObjectURL(file))
   }
 
@@ -66,9 +157,6 @@ export default function Memories() {
     setCropSrc(null)
     setPhotoLoading(true)
     try {
-      // A bit bigger than the chat/check-in default since memories are
-      // meant to be looked back on — still well under Firestore's 1MB
-      // document limit, so no Cloud Storage (and no billing plan) needed.
       setPhotoData(await compressImage(croppedFile, { maxWidth: 1200, maxHeight: 1200, maxBytes: 900_000 }))
     } catch (err) {
       setPhotoError(err.message)
@@ -83,6 +171,7 @@ export default function Memories() {
     try {
       const tags = [...new Set(tagsInput.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))]
       await addDoc(collection(db, 'couples', couple.id, 'memories'), {
+        entryType: 'photo',
         photoData,
         caption: caption.trim(),
         tags,
@@ -97,6 +186,32 @@ export default function Memories() {
       toast.error("Couldn't save that memory — try again.")
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function addMilestone() {
+    const title = milestoneTitle.trim()
+    if (!title || !milestoneDate) return
+    setMilestoneSaving(true)
+    try {
+      await addDoc(collection(db, 'couples', couple.id, 'memories'), {
+        entryType: 'milestone',
+        milestoneType,
+        title,
+        date: milestoneDate,
+        caption: '',
+        tags: [],
+        from: firebaseUser.uid,
+        auto: false,
+        createdAt: new Date(`${milestoneDate}T12:00:00`),
+      })
+      setMilestoneTitle('')
+      setMilestoneDate(todayStr())
+      toast.success('Milestone added.')
+    } catch (e) {
+      toast.error("Couldn't save that milestone — try again.")
+    } finally {
+      setMilestoneSaving(false)
     }
   }
 
@@ -141,9 +256,10 @@ export default function Memories() {
     }
   }
 
-  const allTags = [...new Set(memories.flatMap((m) => m.tags || []))].sort()
+  const photoMemories = useMemo(() => memories.filter((m) => (m.entryType || 'photo') === 'photo'), [memories])
+  const allTags = [...new Set(photoMemories.flatMap((m) => m.tags || []))].sort()
 
-  const filteredMemories = memories.filter((m) => {
+  const filteredMemories = photoMemories.filter((m) => {
     if (activeTag && !(m.tags || []).includes(activeTag)) return false
     if (search.trim()) {
       const q = search.trim().toLowerCase()
@@ -153,11 +269,44 @@ export default function Memories() {
     return true
   })
 
+  // Chronological feed mixing photos and milestones, grouped by day.
+  const timelineGroups = useMemo(() => {
+    const withDates = memories
+      .map((m) => ({ ...m, _dateStr: entryDateStr(m) }))
+      .filter((m) => m._dateStr)
+    const map = {}
+    withDates.forEach((m) => {
+      if (!map[m._dateStr]) map[m._dateStr] = []
+      map[m._dateStr].push(m)
+    })
+    return Object.entries(map).sort((a, b) => (a[0] < b[0] ? 1 : -1))
+  }, [memories])
+
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold mb-1">Memories</h1>
-        <p className="text-sm text-[#7a6a7c]">A shared photo album for the moments you want to keep.</p>
+      <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold mb-1">Memories</h1>
+          <p className="text-sm text-[#7a6a7c]">Photos and milestones, in the order you made them.</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-black/[0.03] rounded-full p-1 w-fit">
+          <button
+            onClick={() => setLayout('timeline')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              layout === 'timeline' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
+            }`}
+          >
+            <FiList size={13} /> Timeline
+          </button>
+          <button
+            onClick={() => setLayout('grid')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              layout === 'grid' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
+            }`}
+          >
+            <FiGrid size={13} /> Grid
+          </button>
+        </div>
       </div>
 
       <CropModal
@@ -168,90 +317,223 @@ export default function Memories() {
       />
 
       <div className="bg-white border border-black/10 rounded-2xl p-5 mb-6">
-        <h3 className="font-semibold mb-3">Add a memory</h3>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handlePhotoPick}
-        />
-
-        {!photoData ? (
+        <div className="flex items-center gap-1.5 bg-black/[0.03] rounded-full p-1 mb-4 w-fit">
           <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={photoLoading}
-            className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
+            onClick={() => setEntryMode('photo')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              entryMode === 'photo' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
+            }`}
           >
-            <FiCamera size={14} />
-            {photoLoading ? (
-              <>
-                <ClipLoader size={12} color="#3d2340" /> Adding photo
-              </>
-            ) : (
-              'Choose a photo'
-            )}
+            <FiCamera size={13} /> Add a photo
           </button>
+          <button
+            onClick={() => setEntryMode('milestone')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              entryMode === 'milestone' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
+            }`}
+          >
+            <FiStar size={13} /> Log a milestone
+          </button>
+        </div>
+
+        {entryMode === 'photo' ? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoPick}
+            />
+
+            {!photoData ? (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={photoLoading}
+                className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
+              >
+                <FiCamera size={14} />
+                {photoLoading ? (
+                  <>
+                    <ClipLoader size={12} color="#3d2340" /> Adding photo
+                  </>
+                ) : (
+                  'Choose a photo'
+                )}
+              </button>
+            ) : (
+              <div>
+                <img src={photoData} alt="Preview" className="rounded-xl max-h-64 object-cover" />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-xs text-peach font-semibold mt-2"
+                >
+                  Choose a different photo
+                </button>
+              </div>
+            )}
+            {photoError && <div className="text-xs text-[#9b3b3b] mt-1.5">{photoError}</div>}
+
+            {photoData && (
+              <>
+                <textarea
+                  rows={2}
+                  className="w-full mt-3 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+                  placeholder="Say something about this one (optional)"
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                />
+                <input
+                  className="w-full mt-2.5 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+                  placeholder="Tags, comma separated (optional) — e.g. trip, anniversary, food"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                />
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={addMemory}
+                    disabled={saving}
+                    className="flex items-center gap-2 py-2.5 px-5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
+                  >
+                    {saving && <ClipLoader size={12} color="#3d2340" />}
+                    {saving ? 'Saving' : 'Save memory'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPhotoData(null)
+                      setCaption('')
+                      setTagsInput('')
+                    }}
+                    disabled={saving}
+                    className="py-2.5 px-5 rounded-xl text-sm border border-black/10"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </>
         ) : (
           <div>
-            <img src={photoData} alt="Preview" className="rounded-xl max-h-64 object-cover" />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="text-xs text-peach font-semibold mt-2"
-            >
-              Choose a different photo
-            </button>
-          </div>
-        )}
-        {photoError && <div className="text-xs text-[#9b3b3b] mt-1.5">{photoError}</div>}
-
-        {photoData && (
-          <>
-            <textarea
-              rows={2}
-              className="w-full mt-3 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-              placeholder="Say something about this one (optional)"
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-            />
-            <input
-              className="w-full mt-2.5 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-              placeholder="Tags, comma separated (optional) — e.g. trip, anniversary, food"
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-            />
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={addMemory}
-                disabled={saving}
-                className="flex items-center gap-2 py-2.5 px-5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
-              >
-                {saving && <ClipLoader size={12} color="#3d2340" />}
-                {saving ? 'Saving' : 'Save memory'}
-              </button>
-              <button
-                onClick={() => {
-                  setPhotoData(null)
-                  setCaption('')
-                  setTagsInput('')
-                }}
-                disabled={saving}
-                className="py-2.5 px-5 rounded-xl text-sm border border-black/10"
-              >
-                Cancel
-              </button>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {MILESTONE_TYPES.map((t) => {
+                const Icon = t.icon
+                const active = milestoneType === t.key
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setMilestoneType(t.key)}
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full border ${
+                      active ? 'border-peach bg-peachsoft font-semibold' : 'border-black/10 text-[#7a6a7c]'
+                    }`}
+                  >
+                    <Icon size={12} style={{ color: active ? undefined : t.color }} /> {t.label}
+                  </button>
+                )
+              })}
             </div>
-          </>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <input
+                className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+                placeholder="e.g. Our first date at the beach"
+                value={milestoneTitle}
+                onChange={(e) => setMilestoneTitle(e.target.value)}
+              />
+              <input
+                type="date"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+                value={milestoneDate}
+                onChange={(e) => setMilestoneDate(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={addMilestone}
+              disabled={milestoneSaving || !milestoneTitle.trim()}
+              className="mt-3 py-2.5 px-5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
+            >
+              {milestoneSaving ? 'Saving...' : 'Add milestone'}
+            </button>
+            <p className="text-xs text-[#9a8a9c] mt-2.5">
+              Streak milestones show up here on their own — no need to log those by hand.
+            </p>
+          </div>
         )}
       </div>
 
-      {memories.length === 0 ? (
+      {loading ? null : memories.length === 0 ? (
         <EmptyState
           icon={FiImage}
           title="No memories saved yet"
-          subtitle="Add your first photo above — the little moments are worth keeping."
+          subtitle="Add your first photo or milestone above — the little moments are worth keeping."
         />
+      ) : layout === 'timeline' ? (
+        <div className="flex flex-col gap-4">
+          {timelineGroups.map(([dateStr, entries]) => (
+            <div key={dateStr} className="bg-white border border-black/10 rounded-2xl p-5">
+              <div className="text-xs font-semibold text-[#9a8a9c] uppercase tracking-wide mb-3">
+                {friendlyDate(dateStr)}
+              </div>
+              <div className="flex flex-col gap-3">
+                {entries.map((entry) => {
+                  if ((entry.entryType || 'photo') === 'milestone') {
+                    const meta = milestoneMeta(entry.milestoneType)
+                    const Icon = meta.icon
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-3 border border-black/5 rounded-xl p-3.5"
+                      >
+                        <div
+                          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: `${meta.color}20` }}
+                        >
+                          <Icon size={16} style={{ color: meta.color }} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold">{entry.title}</div>
+                          <div className="text-[10.5px] text-[#9a8a9c]">
+                            {meta.label}
+                            {entry.auto ? ' · auto-tracked' : ` · added by ${names[entry.from] || '...'}`}
+                          </div>
+                        </div>
+                        {!entry.auto && entry.from === firebaseUser.uid && (
+                          <button
+                            onClick={() => removeMemory(entry.id)}
+                            aria-label="Delete milestone"
+                            className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
+                          >
+                            <FiX size={12} />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  }
+                  return (
+                    <button
+                      key={entry.id}
+                      onClick={() => {
+                        setNewTag('')
+                        setLightbox(entry)
+                      }}
+                      className="flex items-center gap-3 border border-black/5 rounded-xl p-2.5 text-left hover:bg-black/[0.02]"
+                    >
+                      <img
+                        src={entry.photoData}
+                        alt={entry.caption || ''}
+                        className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm truncate">{entry.caption || 'Untitled memory'}</div>
+                        <div className="text-[10.5px] text-[#9a8a9c]">added by {names[entry.from] || '...'}</div>
+                      </div>
+                      {entry.pinned && <FiHeart size={13} className="text-peach flex-shrink-0" fill="currentColor" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <>
           <div className="flex items-center gap-2 mb-3">

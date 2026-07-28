@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
+  FiBookOpen,
   FiCalendar,
   FiCheckSquare,
   FiHeart,
@@ -26,6 +27,7 @@ const items = [
   ['/dashboard', FiHome, 'Dashboard'],
   ['/insights', FiTrendingUp, 'Insights'],
   ['/checkins', FiSmile, 'Check-ins'],
+  ['/journal', FiBookOpen, 'Journal'],
   ['/chat', FiMessageCircle, 'Chat'],
   ['/tasks', FiCheckSquare, 'Tasks'],
   ['/calendar', FiCalendar, 'Calendar'],

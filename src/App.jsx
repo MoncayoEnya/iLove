@@ -12,6 +12,7 @@ import LinkPartner from './pages/LinkPartner'
 import Dashboard from './pages/Dashboard'
 import Insights from './pages/Insights'
 import CheckIns from './pages/CheckIns'
+import Journal from './pages/Journal'
 import Chat from './pages/Chat'
 import Tasks from './pages/Tasks'
 import CalendarPage from './pages/CalendarPage'
@@ -99,6 +100,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <CheckIns />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/journal"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <Journal />
             </AppLayout>
           </ProtectedRoute>
         }
