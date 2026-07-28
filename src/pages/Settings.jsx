@@ -7,12 +7,12 @@ import { FiMoon, FiSun, FiDownload } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import ThemePicker from '../components/ThemePicker'
 import { usePartner } from '../hooks/usePartner'
 import { useLinkCouple } from '../hooks/useLinkCouple'
 import { useMemberNames } from '../hooks/useMemberNames'
 import { joinCodeSchema, zodResolver } from '../lib/schemas'
 import { fetchCoupleData, downloadJSON, downloadHTML, buildReadableHTML } from '../utils/exportData'
-import PrivacySettings from '../components/PrivacySettings'
 
 const NOTIF_OPTIONS = [
   ['notifyChat', 'New messages'],
@@ -209,9 +209,12 @@ export default function Settings() {
               />
             </button>
           </div>
-        </div>
 
-        <PrivacySettings />
+          <div className="mt-4 pt-4 border-t border-black/10">
+            <p className="text-xs text-[#9a8a9c] mb-2.5">Accent color</p>
+            <ThemePicker />
+          </div>
+        </div>
 
         {/* Notifications */}
         <div className="bg-white border border-black/10 rounded-2xl p-5">

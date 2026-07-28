@@ -120,3 +120,78 @@ html.dark .bg-black\/10 {
 html.dark .bg-black\/\[0\.06\] {
   background-color: rgba(255, 255, 255, 0.08);
 }
+
+/* ---------------------------------------------------------------------
+   Accent color palettes. Orthogonal to light/dark: dark mode (above)
+   governs surfaces and neutral text, this governs the peach/gold/plum
+   accent family only, so the two combine without fighting. Palettes are
+   defined for light mode only for now — dark mode keeps its own look no
+   matter which palette is selected. Same override technique as the dark
+   mode block: reskin the compiled Tailwind utility classes directly,
+   since this project's utilities use literal colors rather than CSS
+   custom properties.
+   ------------------------------------------------------------------- */
+
+/* ---- Sakura (soft cherry-blossom pink) ---- */
+html:not(.dark)[data-palette='sakura'] .bg-peach { background-color: #e88ba3; }
+html:not(.dark)[data-palette='sakura'] .bg-peach\/10 { background-color: rgba(232, 139, 163, 0.1); }
+html:not(.dark)[data-palette='sakura'] .bg-peach\/15 { background-color: rgba(232, 139, 163, 0.15); }
+html:not(.dark)[data-palette='sakura'] .bg-peach\/20 { background-color: rgba(232, 139, 163, 0.2); }
+html:not(.dark)[data-palette='sakura'] .bg-gold { background-color: #f3b6c9; }
+html:not(.dark)[data-palette='sakura'] .bg-blush { background-color: #fbe1ea; }
+html:not(.dark)[data-palette='sakura'] .bg-blush\/40 { background-color: rgba(251, 225, 234, 0.4); }
+html:not(.dark)[data-palette='sakura'] .bg-peachsoft { background-color: #f7cddb; }
+html:not(.dark)[data-palette='sakura'] .bg-plumdeep { background-color: #6b3a52; }
+html:not(.dark)[data-palette='sakura'] .bg-plumdeep\/95 { background-color: rgba(107, 58, 82, 0.95); }
+html:not(.dark)[data-palette='sakura'] .border-peach { border-color: #e88ba3; }
+html:not(.dark)[data-palette='sakura'] .border-peach\/30 { border-color: rgba(232, 139, 163, 0.3); }
+html:not(.dark)[data-palette='sakura'] .border-peach\/60 { border-color: rgba(232, 139, 163, 0.6); }
+html:not(.dark)[data-palette='sakura'] .border-plumdeep { border-color: #6b3a52; }
+html:not(.dark)[data-palette='sakura'] .border-plumdeep\/20 { border-color: rgba(107, 58, 82, 0.2); }
+html:not(.dark)[data-palette='sakura'] .border-plumdeep\/40 { border-color: rgba(107, 58, 82, 0.4); }
+html:not(.dark)[data-palette='sakura'] .from-peach,
+html:not(.dark)[data-palette='sakura'] .from-peach\/20 { --tw-gradient-from: #e88ba3; }
+html:not(.dark)[data-palette='sakura'] .to-gold,
+html:not(.dark)[data-palette='sakura'] .to-gold\/20 { --tw-gradient-to: #f3b6c9; }
+html:not(.dark)[data-palette='sakura'] .hover\:text-peach:hover { color: #e88ba3; }
+html:not(.dark)[data-palette='sakura'] .ring-peach { --tw-ring-color: #e88ba3; }
+html:not(.dark)[data-palette='sakura'] .ring-peach\/50 { --tw-ring-color: rgba(232, 139, 163, 0.5); }
+html:not(.dark)[data-palette='sakura'] .text-peach { color: #e88ba3; }
+html:not(.dark)[data-palette='sakura'] .text-peach\/90 { color: rgba(232, 139, 163, 0.9); }
+html:not(.dark)[data-palette='sakura'] .text-peachsoft { color: #f7cddb; }
+html:not(.dark)[data-palette='sakura'] .text-plum { color: #c2447a; }
+html:not(.dark)[data-palette='sakura'] .text-plumdeep { color: #6b3a52; }
+html:not(.dark)[data-palette='sakura'] .text-plumdeep\/60 { color: rgba(107, 58, 82, 0.6); }
+html:not(.dark)[data-palette='sakura'] .text-plumdeep\/70 { color: rgba(107, 58, 82, 0.7); }
+
+/* ---- Ocean (teal / aqua) ---- */
+html:not(.dark)[data-palette='ocean'] .bg-peach { background-color: #3d8fa6; }
+html:not(.dark)[data-palette='ocean'] .bg-peach\/10 { background-color: rgba(61, 143, 166, 0.1); }
+html:not(.dark)[data-palette='ocean'] .bg-peach\/15 { background-color: rgba(61, 143, 166, 0.15); }
+html:not(.dark)[data-palette='ocean'] .bg-peach\/20 { background-color: rgba(61, 143, 166, 0.2); }
+html:not(.dark)[data-palette='ocean'] .bg-gold { background-color: #6ec6c1; }
+html:not(.dark)[data-palette='ocean'] .bg-blush { background-color: #dff2f3; }
+html:not(.dark)[data-palette='ocean'] .bg-blush\/40 { background-color: rgba(223, 242, 243, 0.4); }
+html:not(.dark)[data-palette='ocean'] .bg-peachsoft { background-color: #bfe6e6; }
+html:not(.dark)[data-palette='ocean'] .bg-plumdeep { background-color: #1f4a57; }
+html:not(.dark)[data-palette='ocean'] .bg-plumdeep\/95 { background-color: rgba(31, 74, 87, 0.95); }
+html:not(.dark)[data-palette='ocean'] .border-peach { border-color: #3d8fa6; }
+html:not(.dark)[data-palette='ocean'] .border-peach\/30 { border-color: rgba(61, 143, 166, 0.3); }
+html:not(.dark)[data-palette='ocean'] .border-peach\/60 { border-color: rgba(61, 143, 166, 0.6); }
+html:not(.dark)[data-palette='ocean'] .border-plumdeep { border-color: #1f4a57; }
+html:not(.dark)[data-palette='ocean'] .border-plumdeep\/20 { border-color: rgba(31, 74, 87, 0.2); }
+html:not(.dark)[data-palette='ocean'] .border-plumdeep\/40 { border-color: rgba(31, 74, 87, 0.4); }
+html:not(.dark)[data-palette='ocean'] .from-peach,
+html:not(.dark)[data-palette='ocean'] .from-peach\/20 { --tw-gradient-from: #3d8fa6; }
+html:not(.dark)[data-palette='ocean'] .to-gold,
+html:not(.dark)[data-palette='ocean'] .to-gold\/20 { --tw-gradient-to: #6ec6c1; }
+html:not(.dark)[data-palette='ocean'] .hover\:text-peach:hover { color: #3d8fa6; }
+html:not(.dark)[data-palette='ocean'] .ring-peach { --tw-ring-color: #3d8fa6; }
+html:not(.dark)[data-palette='ocean'] .ring-peach\/50 { --tw-ring-color: rgba(61, 143, 166, 0.5); }
+html:not(.dark)[data-palette='ocean'] .text-peach { color: #3d8fa6; }
+html:not(.dark)[data-palette='ocean'] .text-peach\/90 { color: rgba(61, 143, 166, 0.9); }
+html:not(.dark)[data-palette='ocean'] .text-peachsoft { color: #bfe6e6; }
+html:not(.dark)[data-palette='ocean'] .text-plum { color: #1c6e7a; }
+html:not(.dark)[data-palette='ocean'] .text-plumdeep { color: #1f4a57; }
+html:not(.dark)[data-palette='ocean'] .text-plumdeep\/60 { color: rgba(31, 74, 87, 0.6); }
+html:not(.dark)[data-palette='ocean'] .text-plumdeep\/70 { color: rgba(31, 74, 87, 0.7); }
