@@ -14,6 +14,7 @@ const COLLECTIONS = [
   { key: 'conflictSessions', sortBy: 'createdAt' },
   { key: 'jar', sortBy: 'createdAt' },
   { key: 'events', sortBy: 'date' },
+  { key: 'playlist', sortBy: 'createdAt' },
 ]
 
 function toComparable(v) {
@@ -191,6 +192,17 @@ export function buildReadableHTML(data, names, coupleLabel) {
     ? `<ul>${data.jar.map((j) => `<li class="quote">"${esc(j.text)}" <span class="meta">— ${nameOf(j.from)}, ${fmtDate(j.createdAt)}</span></li>`).join('')}</ul>`
     : '<p class="empty">No love jar notes yet.</p>'
 
+  const playlistHtml = data.playlist.length
+    ? `<ul>${data.playlist
+        .map(
+          (p) =>
+            `<li><strong>${esc(p.title)}</strong>${p.artist ? ` — ${esc(p.artist)}` : ''}${
+              p.note ? `<div class="meta">${esc(p.note)}</div>` : ''
+            } <span class="meta">added by ${nameOf(p.addedBy)}, ${fmtDate(p.createdAt)}</span></li>`
+        )
+        .join('')}</ul>`
+    : '<p class="empty">No songs saved yet.</p>'
+
   const eventsHtml = data.events.length
     ? `<ul>${data.events.map((e) => `<li><strong>${fmtDate(e.date)}</strong> — ${esc(e.title)}${e.note ? `<div class="meta">${esc(e.note)}</div>` : ''}</li>`).join('')}</ul>`
     : '<p class="empty">No calendar events yet.</p>'
@@ -233,6 +245,7 @@ export function buildReadableHTML(data, names, coupleLabel) {
   ${section('Tasks', tasksHtml)}
   ${section('Conflict recovery', conflictHtml)}
   ${section('Love jar', jarHtml)}
+  ${section('Shared playlist', playlistHtml)}
   ${section('Calendar', eventsHtml)}
 </body>
 </html>`

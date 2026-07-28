@@ -17,6 +17,7 @@ export default function Achievements() {
   const [journalCount, setJournalCount] = useState(0)
   const [bucketDoneCount, setBucketDoneCount] = useState(0)
   const [checkinsCount, setCheckinsCount] = useState(0)
+  const [playlistCount, setPlaylistCount] = useState(0)
 
   useEffect(() => {
     if (!coupleId) return
@@ -32,6 +33,7 @@ export default function Achievements() {
         setBucketDoneCount(s.docs.filter((d) => d.data().done).length)
       ),
       onSnapshot(collection(db, 'couples', coupleId, 'checkins'), (s) => setCheckinsCount(s.size)),
+      onSnapshot(collection(db, 'couples', coupleId, 'playlist'), (s) => setPlaylistCount(s.size)),
     ]
     return () => unsubs.forEach((u) => u())
   }, [coupleId])
@@ -46,8 +48,19 @@ export default function Achievements() {
       journalCount,
       bucketDoneCount,
       checkinsCount,
+      playlistCount,
     }),
-    [couple?.streak, jarCount, messageCount, memoriesCount, tasksDoneCount, journalCount, bucketDoneCount, checkinsCount]
+    [
+      couple?.streak,
+      jarCount,
+      messageCount,
+      memoriesCount,
+      tasksDoneCount,
+      journalCount,
+      bucketDoneCount,
+      checkinsCount,
+      playlistCount,
+    ]
   )
 
   const unlockedNow = useMemo(() => evaluateAchievements(stats), [stats])

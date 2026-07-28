@@ -11,8 +11,10 @@ import {
   FiImage,
   FiList,
   FiMapPin,
+  FiDollarSign,
   FiMenu,
   FiMessageCircle,
+  FiMusic,
   FiSettings,
   FiSmile,
   FiTarget,
@@ -27,23 +29,53 @@ import { useUIStore } from '../store/uiStore'
 import Logo from './Logo'
 import ThemeToggle from './ThemeToggle'
 
-const items = [
-  ['/dashboard', FiHome, 'Dashboard'],
-  ['/insights', FiTrendingUp, 'Insights'],
-  ['/checkins', FiSmile, 'Check-ins'],
-  ['/journal', FiBookOpen, 'Journal'],
-  ['/chat', FiMessageCircle, 'Chat'],
-  ['/tasks', FiCheckSquare, 'Tasks'],
-  ['/calendar', FiCalendar, 'Calendar'],
-  ['/jar', FiHeart, 'Love jar'],
-  ['/memories', FiImage, 'Memories'],
-  ['/goals', FiTarget, 'Goals'],
-  ['/achievements', FiAward, 'Achievements'],
-  ['/bucket-list', FiList, 'Bucket list'],
-  ['/time-capsule', FiGift, 'Time capsule'],
-  ['/date-ideas', FiCompass, 'Date ideas'],
-  ['/places', FiMapPin, 'Shared places'],
-  ['/conflict', FiUsers, 'Conflict recovery'],
+// Grouped per Rule #3 ("don't stack 20 cards — group them"). Dashboard and
+// Chat are ungrouped since they're primary destinations mirrored in the
+// mobile BottomNav; everything else is bucketed by what it's for.
+const navGroups = [
+  {
+    label: null,
+    items: [
+      ['/dashboard', FiHome, 'Dashboard'],
+      ['/chat', FiMessageCircle, 'Chat'],
+    ],
+  },
+  {
+    label: 'Today',
+    items: [
+      ['/insights', FiTrendingUp, 'Insights'],
+      ['/checkins', FiSmile, 'Check-ins'],
+    ],
+  },
+  {
+    label: 'Planner',
+    items: [
+      ['/tasks', FiCheckSquare, 'Tasks'],
+      ['/calendar', FiCalendar, 'Calendar'],
+      ['/goals', FiTarget, 'Goals'],
+      ['/bucket-list', FiList, 'Bucket list'],
+      ['/achievements', FiAward, 'Achievements'],
+    ],
+  },
+  {
+    label: 'Memories',
+    items: [
+      ['/journal', FiBookOpen, 'Journal'],
+      ['/jar', FiHeart, 'Love jar'],
+      ['/memories', FiImage, 'Memories'],
+      ['/time-capsule', FiGift, 'Time capsule'],
+    ],
+  },
+  {
+    label: 'Together',
+    items: [
+      ['/date-ideas', FiCompass, 'Date ideas'],
+      ['/places', FiMapPin, 'Shared places'],
+      ['/playlist', FiMusic, 'Shared playlist'],
+      ['/savings', FiDollarSign, 'Shared savings'],
+      ['/conflict', FiUsers, 'Conflict recovery'],
+    ],
+  },
 ]
 
 const secondaryItems = [
@@ -52,10 +84,17 @@ const secondaryItems = [
 ]
 
 // Home/Chat/Tasks/Memories/Profile already have one-tap access from the
-// mobile BottomNav, so the hamburger menu only needs to surface the rest.
-const mobileOverflowItems = items.filter(
-  ([to]) => !['/dashboard', '/chat', '/tasks', '/memories'].includes(to)
-)
+// mobile BottomNav, so the hamburger menu only needs to surface the rest —
+// same grouping as desktop, just with those four filtered out and any
+// resulting empty group dropped.
+const mobileOverflowGroups = navGroups
+  .map((group) => ({
+    ...group,
+    items: group.items.filter(
+      ([to]) => !['/dashboard', '/chat', '/tasks', '/memories'].includes(to)
+    ),
+  }))
+  .filter((group) => group.items.length > 0)
 
 function NavItem({ to, Icon, label, end, onClick }) {
   return (
@@ -109,14 +148,26 @@ export default function Sidebar() {
       {/* Mobile dropdown menu — shown in normal flow, pushes content down */}
       {mobileOpen && (
         <div className="md:hidden bg-plumdeep text-[#f3e6e8] px-4 pb-4 flex flex-col gap-1 border-t border-white/10">
-          {mobileOverflowItems.map(([to, Icon, label]) => (
-            <NavItem
-              key={to}
-              to={to}
-              Icon={Icon}
-              label={label}
-              onClick={() => setMobileOpen(false)}
-            />
+          {mobileOverflowGroups.map((group, i) => (
+            <div
+              key={group.label || i}
+              className={i > 0 ? 'mt-2 pt-2 border-t border-white/10 flex flex-col gap-1' : 'flex flex-col gap-1'}
+            >
+              {group.label && (
+                <span className="px-3.5 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#a892a9]">
+                  {group.label}
+                </span>
+              )}
+              {group.items.map(([to, Icon, label]) => (
+                <NavItem
+                  key={to}
+                  to={to}
+                  Icon={Icon}
+                  label={label}
+                  onClick={() => setMobileOpen(false)}
+                />
+              ))}
+            </div>
           ))}
           <div className="mt-2 pt-2 border-t border-white/10 flex flex-col gap-1">
             <NavItem to="/settings" Icon={FiSettings} label="Settings" onClick={() => setMobileOpen(false)} />
@@ -145,8 +196,20 @@ export default function Sidebar() {
         </div>
 
         <nav className="mt-8 flex flex-col gap-1 flex-1">
-          {items.map(([to, Icon, label]) => (
-            <NavItem key={to} to={to} Icon={Icon} label={label} end={to === '/dashboard'} />
+          {navGroups.map((group, i) => (
+            <div
+              key={group.label || i}
+              className={i > 0 ? 'mt-3 pt-3 border-t border-white/10 flex flex-col gap-1' : 'flex flex-col gap-1'}
+            >
+              {group.label && (
+                <span className="px-3.5 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#a892a9]">
+                  {group.label}
+                </span>
+              )}
+              {group.items.map(([to, Icon, label]) => (
+                <NavItem key={to} to={to} Icon={Icon} label={label} end={to === '/dashboard'} />
+              ))}
+            </div>
           ))}
 
           <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-1">

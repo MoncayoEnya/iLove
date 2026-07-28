@@ -113,6 +113,20 @@ export const ACHIEVEMENTS = [
     check: (s) => s.checkinsCount >= 30,
     progress: (s) => [s.checkinsCount, 30],
   },
+  {
+    id: 'playlist-1',
+    title: 'Our First Song',
+    description: 'Add your first song to the Shared Playlist.',
+    check: (s) => s.playlistCount >= 1,
+    progress: (s) => [s.playlistCount, 1],
+  },
+  {
+    id: 'playlist-20',
+    title: 'Mixtape Makers',
+    description: 'Build a playlist of 20 songs together.',
+    check: (s) => s.playlistCount >= 20,
+    progress: (s) => [s.playlistCount, 20],
+  },
 ]
 
 /** Returns the ids of every achievement currently met by this stats snapshot. */

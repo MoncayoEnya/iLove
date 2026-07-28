@@ -24,6 +24,8 @@ import Achievements from './pages/Achievements'
 import TimeCapsule from './pages/TimeCapsule'
 import DateIdeas from './pages/DateIdeas'
 import SharedPlaces from './pages/SharedPlaces'
+import SharedPlaylist from './pages/SharedPlaylist'
+import SharedSavings from './pages/SharedSavings'
 import ConflictRecovery from './pages/ConflictRecovery'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
@@ -224,6 +226,26 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <SharedPlaces />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/playlist"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <SharedPlaylist />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/savings"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <SharedSavings />
             </AppLayout>
           </ProtectedRoute>
         }
