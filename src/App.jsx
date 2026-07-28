@@ -20,6 +20,10 @@ import LoveJar from './pages/LoveJar'
 import Memories from './pages/Memories'
 import Goals from './pages/Goals'
 import BucketList from './pages/BucketList'
+import Achievements from './pages/Achievements'
+import TimeCapsule from './pages/TimeCapsule'
+import DateIdeas from './pages/DateIdeas'
+import SharedPlaces from './pages/SharedPlaces'
 import ConflictRecovery from './pages/ConflictRecovery'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
@@ -180,6 +184,46 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <BucketList />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/achievements"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <Achievements />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/time-capsule"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <TimeCapsule />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/date-ideas"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <DateIdeas />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/places"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <SharedPlaces />
             </AppLayout>
           </ProtectedRoute>
         }

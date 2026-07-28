@@ -1,12 +1,16 @@
 import { NavLink } from 'react-router-dom'
 import {
+  FiAward,
   FiBookOpen,
   FiCalendar,
   FiCheckSquare,
+  FiCompass,
+  FiGift,
   FiHeart,
   FiHome,
   FiImage,
   FiList,
+  FiMapPin,
   FiMenu,
   FiMessageCircle,
   FiSettings,
@@ -34,7 +38,11 @@ const items = [
   ['/jar', FiHeart, 'Love jar'],
   ['/memories', FiImage, 'Memories'],
   ['/goals', FiTarget, 'Goals'],
+  ['/achievements', FiAward, 'Achievements'],
   ['/bucket-list', FiList, 'Bucket list'],
+  ['/time-capsule', FiGift, 'Time capsule'],
+  ['/date-ideas', FiCompass, 'Date ideas'],
+  ['/places', FiMapPin, 'Shared places'],
   ['/conflict', FiUsers, 'Conflict recovery'],
 ]
 

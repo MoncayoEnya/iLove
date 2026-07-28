@@ -190,6 +190,9 @@ export default function Dashboard() {
 
           tx.update(coupleRef, {
             streak: newStreak,
+            // Best-ever streak, kept separately from the live one so a
+            // reset streak doesn't erase the couple's record.
+            longestStreak: Math.max(data.longestStreak || 0, newStreak),
             lastCheckinDate: today,
             // A restarted streak gets a fresh grace day; using the grace
             // day spends it until the streak breaks and restarts again.

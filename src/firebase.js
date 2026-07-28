@@ -7,10 +7,24 @@
 // Note: this project intentionally does NOT use Firebase Storage (Cloud Storage now
 // requires the paid Blaze plan). Profile photos are stored as plain image URLs in
 // Firestore instead, so everything here runs on the free Spark plan.
+//
+// Offline persistence: Firestore caches reads to IndexedDB and queues writes
+// made while offline, syncing automatically once the connection returns.
+// This covers "read cached messages/tasks/memories/etc while offline" for
+// free — no new code needed anywhere else, every onSnapshot listener in the
+// app already benefits from it. `persistentMultipleTabManager` lets the
+// cache stay in sync if the person has the app open in more than one tab;
+// if that ever causes issues, swap it for `persistentSingleTabManager()`.
+// Requires firebase SDK 9.23+ (this API replaces the older, now-deprecated
+// `enableIndexedDbPersistence`).
 
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -23,4 +37,9 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
+})
