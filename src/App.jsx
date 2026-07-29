@@ -28,11 +28,13 @@ import ConflictRecovery from './pages/ConflictRecovery'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
 import { useLocalReminders } from './hooks/useLocalReminders'
+import { usePushSubscription } from './hooks/usePushSubscription'
 
 function AppLayout({ children }) {
   // Fires browser notifications for upcoming calendar reminders while the
   // app is open, on whichever page the person happens to be on.
   useLocalReminders()
+  usePushSubscription()
   const { pathname } = useLocation()
 
   return (

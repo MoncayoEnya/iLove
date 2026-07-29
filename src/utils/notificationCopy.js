@@ -51,3 +51,11 @@ export function streakRiskCopy(streak, hoursLeft, partnerLoveLanguage) {
     )}`,
   }
 }
+
+/** Title/body for the "it's been a while since the jar got a new note" nudge. */
+export function jarInactivityCopy(daysSince) {
+  return {
+    title: "It's been a while",
+    body: `It's been ${daysSince} days since anyone dropped a note in the love jar. Add one for your partner to find.`,
+  }
+}

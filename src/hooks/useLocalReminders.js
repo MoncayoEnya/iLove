@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { collection, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
-import { eventReminderCopy, streakRiskCopy } from '../utils/notificationCopy'
+import { eventReminderCopy, streakRiskCopy, jarInactivityCopy } from '../utils/notificationCopy'
 import { todayStr } from '../utils/date'
 
 const LOOKAHEAD_MS = 24 * 60 * 60 * 1000 // only schedule reminders due within the next 24h
@@ -11,6 +11,8 @@ const REFRESH_MS = 5 * 60 * 1000 // re-check the window every 5 minutes
 const MAX_TIMERS = 50 // safety cap
 const STREAK_RISK_KEY = 'ilovee-streak-risk-fired'
 const STREAK_RISK_WINDOW_HOURS = 3 // start warning once this many hours remain in the day
+const JAR_NUDGE_KEY = 'ilovee-jar-nudge-fired'
+const JAR_NUDGE_AFTER_DAYS = 3 // nudge once the jar has gone this many days without a new note
 
 // Fires a real browser Notification when a calendar reminder comes due, as long
 // as this tab (or another tab of the app) stays open. This is NOT push — it
@@ -134,6 +136,48 @@ export function useLocalReminders() {
     return unsub
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coupleId, firebaseUser?.uid, couple?.streak, tick, partnerLoveLanguage])
+
+  // ---- Love-jar inactivity nudge ----
+  // Watches only the single most-recent jar note (cheap: one doc, always-on
+  // listener). If it's older than JAR_NUDGE_AFTER_DAYS — or the jar is empty
+  // entirely — fire one local nudge per day, same "already warned today"
+  // localStorage guard used for the streak-risk nudge above.
+  useEffect(() => {
+    if (!coupleId || typeof window === 'undefined' || !('Notification' in window)) return
+
+    const q = query(collection(db, 'couples', coupleId, 'jar'), orderBy('createdAt', 'desc'), limit(1))
+    const unsub = onSnapshot(q, (snap) => {
+      const latest = snap.docs[0]?.data()
+      const lastAtMs = latest?.createdAt?.toMillis
+        ? latest.createdAt.toMillis()
+        : latest?.createdAt
+        ? new Date(latest.createdAt).getTime()
+        : null
+
+      // No notes yet: treat the couple's account creation-less case gently —
+      // just skip until there's at least one note, so we don't nag brand-new
+      // couples who haven't been introduced to the feature yet.
+      if (!lastAtMs) return
+
+      const daysSince = Math.floor((Date.now() - lastAtMs) / (24 * 60 * 60 * 1000))
+      if (daysSince < JAR_NUDGE_AFTER_DAYS) return
+
+      const today = todayStr()
+      if (localStorage.getItem(JAR_NUDGE_KEY) === today) return
+
+      try {
+        if (Notification.permission === 'granted') {
+          const { title, body } = jarInactivityCopy(daysSince)
+          new Notification(title, { body, tag: 'jar-inactivity' })
+        }
+        localStorage.setItem(JAR_NUDGE_KEY, today)
+      } catch {
+        // Fail silently, same as the other local-notification paths above.
+      }
+    })
+    return unsub
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coupleId, tick])
 
   // Clear all pending timers on unmount.
   useEffect(() => {

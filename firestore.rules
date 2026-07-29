@@ -84,5 +84,17 @@ service cloud.firestore {
             get(/databases/$(database)/documents/couples/$(coupleId)/conflictSessions/$(sessionId)).data.status != 'active');
       }
     }
+
+    // --- Added for Web Push (jar-inactivity nudges + future push types) ---
+    // pushSubscriptions/{uid} — one doc per signed-in user, holding their
+    // browser's PushSubscription object plus which couple they belong to
+    // (so the scheduled sender can look subscriptions up by coupleId
+    // without needing to join against /users or /couples).
+    // Only the owning user can read or write their own subscription doc;
+    // the scheduled job itself uses the Admin SDK, which bypasses these
+    // rules entirely, so it can still read every subscription to send pushes.
+    match /pushSubscriptions/{uid} {
+      allow read, write: if isMe(uid);
+    }
   }
 }
