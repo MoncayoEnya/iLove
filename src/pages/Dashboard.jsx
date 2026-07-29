@@ -17,18 +17,50 @@ import {
   FiCalendar,
   FiCamera,
   FiCheckSquare,
+  FiFrown,
   FiGift,
   FiHeart,
   FiInfo,
+  FiMail,
+  FiMeh,
   FiSmile,
+  FiTarget,
 } from 'react-icons/fi'
+import { FaFire } from 'react-icons/fa'
 import { db } from '../firebase'
+import BottomSheet from '../components/BottomSheet'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { compressImage } from '../utils/compressImage'
 import { MOODS } from '../utils/moods'
 import { anniversaryInfo, friendlyDate, ordinalSuffix, todayStr } from '../utils/date'
 import { computeRelationshipHealth } from '../utils/relationshipHealth'
+
+// Circular progress ring for the relationship-health score. Pure SVG, no
+// deps — a stroked circle with a partial dasharray offset by score.
+function HealthRing({ score, size = 64 }) {
+  const stroke = 5
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const offset = c - (Math.min(100, Math.max(0, score)) / 100) * c
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 flex-shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(61,35,64,0.15)" strokeWidth={stroke} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="#3d2340"
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={offset}
+        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+      />
+    </svg>
+  )
+}
 
 export default function Dashboard() {
   const { firebaseUser, profile, couple } = useAuth()
@@ -46,6 +78,7 @@ export default function Dashboard() {
   const [photoError, setPhotoError] = useState('')
   const [photoLoading, setPhotoLoading] = useState(false)
   const [showHealthInfo, setShowHealthInfo] = useState(false)
+  const [checkinOpen, setCheckinOpen] = useState(false)
   const photoInputRef = useRef(null)
 
   const coupleId = couple?.id
@@ -114,6 +147,13 @@ export default function Dashboard() {
   const todayGoalDone = todayTasks.filter((t) => t.done).length
   const todayGoalTotal = todayTasks.length
 
+  function moodIcon(v) {
+    if (v === 'amazing' || v === 'good') return FiSmile
+    if (v === 'okay') return FiMeh
+    if (v === 'sad' || v === 'hard') return FiFrown
+    return FiMeh
+  }
+
   function greeting() {
     const h = dayjs().hour()
     if (h < 12) return 'Good morning'
@@ -157,6 +197,7 @@ export default function Dashboard() {
       photoData: photoData || null,
       createdAt: new Date(),
     })
+    setCheckinOpen(false)
 
     // If both partners have now checked in today, bump the streak (once)
     const members = couple.members
@@ -221,33 +262,50 @@ export default function Dashboard() {
       ) : (
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-peach via-[#f5a3ae] to-gold p-5 sm:p-7 text-plumdeep mb-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-plumdeep/70">
-                {greeting()}, {profile.displayName}
-              </p>
-              <h1 className="text-xl sm:text-2xl font-semibold mt-0.5">
-                You &amp; {partner?.displayName || '...'} <span aria-hidden>❤️</span>
-              </h1>
-              {partner?.loveLanguage && (
-                <p className="text-xs text-plumdeep/70 mt-1">
-                  {partner.displayName || 'Your partner'}'s love language is{' '}
-                  <span className="font-semibold">{partner.loveLanguage}</span>
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden flex-shrink-0 bg-white/40 border-2 border-white/70 flex items-center justify-center text-plumdeep text-lg font-semibold">
+                {partner?.photoURL ? (
+                  <img src={partner.photoURL} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  (partner?.displayName || '?')[0]?.toUpperCase()
+                )}
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-plumdeep/70">
+                  {greeting()}, {profile.displayName}
                 </p>
-              )}
+                <h1 className="text-xl sm:text-2xl font-semibold mt-0.5 flex items-center gap-2">
+                  You &amp; {partner?.displayName || '...'}{' '}
+                  <FiHeart size={18} className="text-plumdeep/80 flex-shrink-0" fill="currentColor" aria-hidden="true" />
+                </h1>
+                {partner?.loveLanguage && (
+                  <p className="text-xs text-plumdeep/70 mt-1">
+                    {partner.displayName || 'Your partner'}'s love language is{' '}
+                    <span className="font-semibold">{partner.loveLanguage}</span>
+                  </p>
+                )}
+              </div>
             </div>
 
             <button
               onClick={() => setShowHealthInfo((v) => !v)}
-              className="text-right shrink-0"
+              className="flex items-center gap-2.5 shrink-0"
               aria-expanded={showHealthInfo}
               aria-label="Show how relationship health is calculated"
             >
-              <div className="flex items-center gap-1 justify-end">
-                <div className="text-3xl sm:text-4xl font-bold leading-none">{health.score}%</div>
-                <FiInfo size={14} className="text-plumdeep/60 mb-3" />
+              <div className="text-right">
+                <div className="text-[10.5px] font-semibold uppercase tracking-wide text-plumdeep/70">
+                  Relationship
+                </div>
+                <div className="text-[10.5px] font-semibold uppercase tracking-wide text-plumdeep/70 flex items-center gap-1 justify-end">
+                  health <FiInfo size={12} className="text-plumdeep/60" />
+                </div>
               </div>
-              <div className="text-[10.5px] font-semibold uppercase tracking-wide text-plumdeep/70">
-                Relationship health
+              <div className="relative">
+                <HealthRing score={health.score} />
+                <div className="absolute inset-0 flex items-center justify-center text-sm font-bold">
+                  {health.score}%
+                </div>
               </div>
             </button>
           </div>
@@ -267,36 +325,39 @@ export default function Dashboard() {
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-5">
             <div className="bg-white/70 rounded-2xl p-3">
-              <div className="text-xl leading-none">🔥</div>
-              <div className="text-lg font-semibold mt-1">{couple?.streak || 0} Day{couple?.streak === 1 ? '' : 's'}</div>
+              <FaFire size={18} className="text-peach" />
+              <div className="text-lg font-semibold mt-1.5">{couple?.streak || 0} Day{couple?.streak === 1 ? '' : 's'}</div>
               <div className="text-[10.5px] text-plumdeep/70">Streak</div>
             </div>
 
             <div className="bg-white/70 rounded-2xl p-3">
-              <div className="text-xl leading-none">{MOODS.find((m) => m.v === partnerCheckin?.mood)?.e || '😊'}</div>
-              <div className="text-lg font-semibold mt-1">
+              {(() => {
+                const MoodIcon = moodIcon(partnerCheckin?.mood)
+                return <MoodIcon size={18} className="text-peach" />
+              })()}
+              <div className="text-lg font-semibold mt-1.5">
                 {MOODS.find((m) => m.v === partnerCheckin?.mood)?.l || 'Not yet'}
               </div>
               <div className="text-[10.5px] text-plumdeep/70">{partner?.displayName || 'Partner'}'s mood</div>
             </div>
 
             <div className="bg-white/70 rounded-2xl p-3">
-              <div className="text-xl leading-none">💌</div>
-              <div className="text-lg font-semibold mt-1">{newAppreciationCount}</div>
+              <FiMail size={18} className="text-peach" />
+              <div className="text-lg font-semibold mt-1.5">{newAppreciationCount}</div>
               <div className="text-[10.5px] text-plumdeep/70">New appreciation</div>
             </div>
 
             <div className="bg-white/70 rounded-2xl p-3">
-              <div className="text-xl leading-none">📅</div>
-              <div className="text-lg font-semibold mt-1">{nextEvent ? nextEventLabel(nextEvent) : 'None yet'}</div>
+              <FiCalendar size={18} className="text-peach" />
+              <div className="text-lg font-semibold mt-1.5">{nextEvent ? nextEventLabel(nextEvent) : 'None yet'}</div>
               <div className="text-[10.5px] text-plumdeep/70">
                 {nextEvent ? nextEvent.title : 'Next date'}
               </div>
             </div>
 
             <div className="bg-white/70 rounded-2xl p-3 col-span-2 sm:col-span-1">
-              <div className="text-xl leading-none">🎯</div>
-              <div className="text-lg font-semibold mt-1">
+              <FiTarget size={18} className="text-peach" />
+              <div className="text-lg font-semibold mt-1.5">
                 {todayGoalTotal === 0 ? '—' : `${todayGoalDone}/${todayGoalTotal}`}
               </div>
               <div className="text-[10.5px] text-plumdeep/70">
@@ -307,7 +368,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         <div className="bg-white border border-black/10 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold flex items-center gap-2">
@@ -337,69 +398,12 @@ export default function Dashboard() {
             </>
           ) : (
             <>
-              <div className="flex gap-2 mt-2">
-                {MOODS.map((m) => (
-                  <div
-                    key={m.v}
-                    onClick={() => setPickedMood(m.v)}
-                    className={`flex-1 border rounded-xl py-3 text-center cursor-pointer text-2xl ${
-                      pickedMood === m.v ? 'border-peach bg-peachsoft' : 'border-black/10'
-                    }`}
-                  >
-                    <div>{m.e}</div>
-                    <div className="text-[10px] text-[#9a8a9c] mt-1">{m.l}</div>
-                  </div>
-                ))}
-              </div>
-              <textarea
-                rows={2}
-                className="w-full mt-2.5 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-                placeholder="How was today, really? (optional journal entry)"
-                value={journal}
-                onChange={(e) => setJournal(e.target.value)}
-              />
-              <input
-                className="w-full mt-2.5 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-                placeholder="One thing you appreciated today (optional)"
-                value={gratitude}
-                onChange={(e) => setGratitude(e.target.value)}
-              />
-
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handlePhotoPick}
-              />
-              <div className="flex items-center gap-2.5 mt-2.5">
-                <button
-                  onClick={() => photoInputRef.current?.click()}
-                  disabled={photoLoading}
-                  className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
-                >
-                  <FiCamera size={14} />
-                  {photoLoading ? 'Adding photo...' : photoData ? 'Change photo' : 'Add a photo (optional)'}
-                </button>
-                {photoData && (
-                  <button
-                    onClick={() => setPhotoData(null)}
-                    className="text-xs text-[#9a8a9c]"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-              {photoData && (
-                <img src={photoData} alt="Preview" className="rounded-xl mt-2.5 max-h-32 object-cover" />
-              )}
-              {photoError && <div className="text-xs text-[#9b3b3b] mt-1.5">{photoError}</div>}
-
+              <div className="text-sm text-[#9a8a9c] mb-3">You haven't checked in today.</div>
               <button
-                onClick={submitCheckin}
-                className="w-full mt-3 py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep"
+                onClick={() => setCheckinOpen(true)}
+                className="w-full py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep"
               >
-                Save check-in
+                Check in for today
               </button>
             </>
           )}
@@ -412,14 +416,21 @@ export default function Dashboard() {
           {tasks.length === 0 ? (
             <div className="text-sm text-[#a892a9]">Nothing open — nice.</div>
           ) : (
-            tasks.slice(0, 4).map((t) => (
-              <div key={t.id} className="text-sm py-1.5">
-                • {t.text}
+            <>
+              <div className="md:hidden text-sm text-[#7a6a7c]">
+                {tasks.length} remaining
               </div>
-            ))
+              <div className="hidden md:block">
+                {tasks.slice(0, 4).map((t) => (
+                  <div key={t.id} className="text-sm py-1.5">
+                    • {t.text}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
           <Link to="/tasks" className="inline-block mt-3 text-sm border border-black/10 rounded-xl px-4 py-2">
-            Go to tasks
+            {tasks.length === 0 ? 'Go to tasks' : 'See all tasks'}
           </Link>
         </div>
 
@@ -430,17 +441,30 @@ export default function Dashboard() {
           {events.length === 0 ? (
             <div className="text-sm text-[#a892a9]">Nothing planned yet.</div>
           ) : (
-            events.slice(0, 3).map((ev) => (
-              <div key={ev.id} className="text-sm py-1.5">
+            <>
+              <div className="md:hidden text-sm">
                 <span className="text-[10.5px] bg-blush text-plum px-2 py-0.5 rounded-full font-semibold mr-2">
-                  {ev.date}
+                  {events[0].date}
                 </span>
-                {ev.title}
+                {events[0].title}
+                {events.length > 1 && (
+                  <div className="text-xs text-[#9a8a9c] mt-1.5">+{events.length - 1} more upcoming</div>
+                )}
               </div>
-            ))
+              <div className="hidden md:block">
+                {events.slice(0, 3).map((ev) => (
+                  <div key={ev.id} className="text-sm py-1.5">
+                    <span className="text-[10.5px] bg-blush text-plum px-2 py-0.5 rounded-full font-semibold mr-2">
+                      {ev.date}
+                    </span>
+                    {ev.title}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
           <Link to="/calendar" className="inline-block mt-3 text-sm border border-black/10 rounded-xl px-4 py-2">
-            Open calendar
+            {events.length === 0 ? 'Open calendar' : 'See full calendar'}
           </Link>
         </div>
 
@@ -479,11 +503,78 @@ export default function Dashboard() {
           ) : (
             <div className="jar-note">"{lastJarNote.text}"</div>
           )}
-          <Link to="/jar" className="inline-block mt-3 text-sm border border-black/10 rounded-xl px-4 py-2">
+          <Link to="/memories?tab=jar" className="inline-block mt-3 text-sm border border-black/10 rounded-xl px-4 py-2">
             Open love jar
           </Link>
         </div>
       </div>
+
+      <BottomSheet open={checkinOpen} onClose={() => setCheckinOpen(false)} title="Daily check-in">
+        <div className="flex gap-2 mt-2">
+          {MOODS.map((m) => (
+            <div
+              key={m.v}
+              onClick={() => setPickedMood(m.v)}
+              className={`flex-1 border rounded-xl py-3 text-center cursor-pointer text-2xl ${
+                pickedMood === m.v ? 'border-peach bg-peachsoft' : 'border-black/10'
+              }`}
+            >
+              <div>{m.e}</div>
+              <div className="text-[10px] text-[#9a8a9c] mt-1">{m.l}</div>
+            </div>
+          ))}
+        </div>
+        <textarea
+          rows={2}
+          className="w-full mt-2.5 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+          placeholder="How was today, really? (optional journal entry)"
+          value={journal}
+          onChange={(e) => setJournal(e.target.value)}
+        />
+        <input
+          className="w-full mt-2.5 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+          placeholder="One thing you appreciated today (optional)"
+          value={gratitude}
+          onChange={(e) => setGratitude(e.target.value)}
+        />
+
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handlePhotoPick}
+        />
+        <div className="flex items-center gap-2.5 mt-2.5">
+          <button
+            onClick={() => photoInputRef.current?.click()}
+            disabled={photoLoading}
+            className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
+          >
+            <FiCamera size={14} />
+            {photoLoading ? 'Adding photo...' : photoData ? 'Change photo' : 'Add a photo (optional)'}
+          </button>
+          {photoData && (
+            <button
+              onClick={() => setPhotoData(null)}
+              className="text-xs text-[#9a8a9c]"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+        {photoData && (
+          <img src={photoData} alt="Preview" className="rounded-xl mt-2.5 max-h-32 object-cover" />
+        )}
+        {photoError && <div className="text-xs text-[#9b3b3b] mt-1.5">{photoError}</div>}
+
+        <button
+          onClick={submitCheckin}
+          className="w-full mt-3 py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep"
+        >
+          Save check-in
+        </button>
+      </BottomSheet>
     </div>
   )
 }

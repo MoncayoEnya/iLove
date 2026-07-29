@@ -20,7 +20,7 @@ import { friendlyDate, todayStr, yesterdayStr } from '../utils/date'
 import EmptyState from '../components/EmptyState'
 import { SkeletonList } from '../components/Skeleton'
 
-export default function Journal() {
+export default function Journal({ embedded = false }) {
   const { firebaseUser, couple } = useAuth()
   const { hasPartner } = usePartner()
   const coupleId = couple?.id
@@ -114,13 +114,15 @@ export default function Journal() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold mb-1">Journal</h1>
-        <p className="text-sm text-[#7a6a7c]">
-          A shared, browsable log — write whenever something's worth remembering, not just at
-          check-in.
-        </p>
-      </div>
+      {!embedded && (
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold mb-1">Journal</h1>
+          <p className="text-sm text-[#7a6a7c]">
+            A shared, browsable log — write whenever something's worth remembering, not just at
+            check-in.
+          </p>
+        </div>
+      )}
 
       <div className="bg-white border border-black/10 rounded-2xl p-5 mb-5">
         <label className="block text-xs text-[#6b5a6d] mb-1.5 font-semibold">New entry</label>

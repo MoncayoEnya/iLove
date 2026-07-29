@@ -30,7 +30,7 @@ function categoryMeta(value) {
   return JAR_CATEGORIES.find((c) => c.value === value) || JAR_CATEGORIES[0]
 }
 
-export default function LoveJar() {
+export default function LoveJar({ embedded = false }) {
   const { firebaseUser, couple } = useAuth()
   const [notes, setNotes] = useState([])
   const names = useMemberNames(couple?.members)
@@ -85,11 +85,13 @@ export default function LoveJar() {
 
   return (
     <div>
-      <div className="mb-6 flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Love jar</h1>
-          <p className="text-sm text-[#7a6a7c]">Drop in appreciation notes. Open the jar whenever you need a lift.</p>
-        </div>
+      <div className={embedded ? 'mb-5 flex justify-end gap-3' : 'mb-6 flex items-start justify-between gap-3'}>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-semibold mb-1">Love jar</h1>
+            <p className="text-sm text-[#7a6a7c]">Drop in appreciation notes. Open the jar whenever you need a lift.</p>
+          </div>
+        )}
         <button
           onClick={() => setShowBrowse((s) => !s)}
           className={`shrink-0 mt-1 flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-colors ${

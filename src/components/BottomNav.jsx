@@ -15,7 +15,7 @@ const items = [
 export default function BottomNav() {
   return (
     <nav
-      className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-plumdeep/95 backdrop-blur-md border-t border-white/10 pb-[env(safe-area-inset-bottom)]"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-plumdeep/95 backdrop-blur-md border-t border-white/10 pb-[env(safe-area-inset-bottom)]"
       aria-label="Primary"
     >
       <div className="flex items-stretch justify-around">

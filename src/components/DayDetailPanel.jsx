@@ -12,7 +12,7 @@ export default function DayDetailPanel({ dateStr, todayStr, events, tasks, memor
       {nothing && (
         <div className="text-sm text-[#a892a9]">
           Nothing here yet — add an event below, or drop a{' '}
-          <Link to="/jar" className="text-peach font-semibold">
+          <Link to="/memories?tab=jar" className="text-peach font-semibold">
             love note
           </Link>{' '}
           or a{' '}

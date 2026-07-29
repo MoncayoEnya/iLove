@@ -6,6 +6,17 @@ body {
   @apply bg-paper text-ink font-sans;
 }
 
+/* Scrollbars are hidden everywhere in the app — scrolling still works via
+   wheel/trackpad/touch/keyboard, the browser just doesn't paint a visible
+   track or thumb. Applies globally so no per-component class is needed. */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge/IE */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, new Edge */
+}
+
 .jar-note {
   @apply bg-blush rounded-xl p-4 font-serif italic text-plumdeep text-center;
 }

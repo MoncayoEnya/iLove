@@ -59,7 +59,9 @@ export const profileSchema = z.object({
     .string()
     .trim()
     .optional()
-    .refine((v) => !v || /^https?:\/\/.+/i.test(v), { message: 'Must be a valid link starting with http(s)://' }),
+    .refine((v) => !v || /^https?:\/\/.+/i.test(v) || /^data:image\/.+/i.test(v), {
+      message: 'Must be a valid link starting with http(s)://',
+    }),
   anniversaryDate: z.string().optional(),
   favoriteSong: z.string().trim().max(120, 'Keep it under 120 characters').optional(),
   loveLanguage: z.string().optional(),

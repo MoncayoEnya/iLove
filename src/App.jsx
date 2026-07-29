@@ -1,9 +1,10 @@
-import { Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
 import ProtectedRoute from './components/ProtectedRoute'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
+import FloatingActionButton from './components/FloatingActionButton'
 import PageTransition from './components/PageTransition'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -12,16 +13,13 @@ import LinkPartner from './pages/LinkPartner'
 import Dashboard from './pages/Dashboard'
 import Insights from './pages/Insights'
 import CheckIns from './pages/CheckIns'
-import Journal from './pages/Journal'
 import Chat from './pages/Chat'
 import Tasks from './pages/Tasks'
 import CalendarPage from './pages/CalendarPage'
-import LoveJar from './pages/LoveJar'
-import Memories from './pages/Memories'
+import MemoriesHub from './pages/MemoriesHub'
 import Goals from './pages/Goals'
 import BucketList from './pages/BucketList'
 import Achievements from './pages/Achievements'
-import TimeCapsule from './pages/TimeCapsule'
 import DateIdeas from './pages/DateIdeas'
 import SharedPlaces from './pages/SharedPlaces'
 import SharedPlaylist from './pages/SharedPlaylist'
@@ -35,13 +33,15 @@ function AppLayout({ children }) {
   // Fires browser notifications for upcoming calendar reminders while the
   // app is open, on whichever page the person happens to be on.
   useLocalReminders()
+  const { pathname } = useLocation()
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col lg:flex-row min-h-screen lg:h-screen lg:overflow-hidden">
       <Sidebar />
-      <div className="flex-1 p-4 sm:p-6 md:p-9 pb-24 md:pb-9 max-w-full md:max-w-[980px] overflow-y-auto">
+      <div className="flex-1 p-4 sm:p-6 lg:p-9 pb-24 lg:pb-9 max-w-full lg:max-w-[900px] xl:max-w-[1200px] overflow-y-auto">
         <PageTransition>{children}</PageTransition>
       </div>
+      {!pathname.startsWith('/chat') && <FloatingActionButton />}
       <BottomNav />
     </div>
   )
@@ -110,16 +110,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/journal"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <Journal />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/journal" element={<Navigate to="/memories?tab=journal" replace />} />
       <Route
         path="/chat"
         element={
@@ -150,22 +141,13 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/jar"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <LoveJar />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/jar" element={<Navigate to="/memories?tab=jar" replace />} />
       <Route
         path="/memories"
         element={
           <ProtectedRoute>
             <AppLayout>
-              <Memories />
+              <MemoriesHub />
             </AppLayout>
           </ProtectedRoute>
         }
@@ -200,16 +182,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/time-capsule"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <TimeCapsule />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/time-capsule" element={<Navigate to="/memories?tab=capsule" replace />} />
       <Route
         path="/date-ideas"
         element={

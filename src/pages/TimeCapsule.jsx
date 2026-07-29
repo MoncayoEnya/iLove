@@ -9,7 +9,7 @@ import { useMemberNames } from '../hooks/useMemberNames'
 import { todayStr } from '../utils/date'
 import EmptyState from '../components/EmptyState'
 
-export default function TimeCapsule() {
+export default function TimeCapsule({ embedded = false }) {
   const { firebaseUser, couple } = useAuth()
   const coupleId = couple?.id
   const names = useMemberNames(couple?.members)
@@ -78,12 +78,14 @@ export default function TimeCapsule() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold mb-1">Time capsule</h1>
-        <p className="text-sm text-[#7a6a7c]">
-          Write something for future you two. It stays sealed until the date you pick.
-        </p>
-      </div>
+      {!embedded && (
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold mb-1">Time capsule</h1>
+          <p className="text-sm text-[#7a6a7c]">
+            Write something for future you two. It stays sealed until the date you pick.
+          </p>
+        </div>
+      )}
 
       <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
         <h3 className="font-semibold mb-3">Seal a new capsule</h3>

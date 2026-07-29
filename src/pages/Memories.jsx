@@ -68,7 +68,7 @@ function entryDateStr(entry) {
   return null
 }
 
-export default function Memories() {
+export default function Memories({ embedded = false }) {
   const { firebaseUser, couple } = useAuth()
   const names = useMemberNames(couple?.members)
 
@@ -284,11 +284,13 @@ export default function Memories() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Memories</h1>
-          <p className="text-sm text-[#7a6a7c]">Photos and milestones, in the order you made them.</p>
-        </div>
+      <div className={embedded ? 'mb-5 flex justify-end' : 'mb-6 flex items-center justify-between flex-wrap gap-3'}>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-semibold mb-1">Memories</h1>
+            <p className="text-sm text-[#7a6a7c]">Photos and milestones, in the order you made them.</p>
+          </div>
+        )}
         <div className="flex items-center gap-1.5 bg-black/[0.03] rounded-full p-1 w-fit">
           <button
             onClick={() => setLayout('timeline')}
