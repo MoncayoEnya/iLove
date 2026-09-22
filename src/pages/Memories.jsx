@@ -24,7 +24,7 @@ import {
   FiImage,
   FiList,
   FiMusic,
-  FiSearch,
+  FiPlus,
   FiStar,
   FiTag,
   FiX,
@@ -56,6 +56,40 @@ function milestoneMeta(milestoneType) {
   return MILESTONE_TYPES.find((m) => m.key === milestoneType) || MILESTONE_TYPES[MILESTONE_TYPES.length - 1]
 }
 
+// Shared photo tile used by the featured row, the "More memories" grid, and
+// the timeline's day-by-day grid. `size` only changes the image height and
+// caption scale — the interaction (open lightbox, toggle pin) is identical
+// everywhere, so keeping it in one place avoids the three call sites drifting.
+function MemoryPhotoCard({ entry, names, onOpen, onTogglePin, size = 'md' }) {
+  const heightClass = size === 'lg' ? 'h-60' : size === 'sm' ? 'h-32' : 'h-36'
+  const titleClass = size === 'lg' ? 'text-base' : 'text-[12.5px]'
+  return (
+    <div className="relative rounded-2xl overflow-hidden border border-black/10">
+      <button onClick={onOpen} className="block w-full text-left">
+        <img
+          src={entry.photoData}
+          alt={entry.caption || ''}
+          className={`w-full ${heightClass} object-cover`}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-black/0" />
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 p-3 text-white">
+          <div className={`${titleClass} font-serif font-semibold truncate`}>{entry.caption || 'Untitled memory'}</div>
+          <div className="text-[10.5px] opacity-85 truncate">Added by {names[entry.from] || '...'}</div>
+        </div>
+      </button>
+      <button
+        onClick={onTogglePin}
+        aria-label={entry.pinned ? 'Remove from favorite memories' : 'Add to favorite memories'}
+        aria-pressed={!!entry.pinned}
+        title={entry.pinned ? 'Remove from favorite memories' : 'Add to favorite memories'}
+        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/85 flex items-center justify-center text-peach shadow-sm"
+      >
+        <FiHeart size={13} fill={entry.pinned ? 'currentColor' : 'none'} />
+      </button>
+    </div>
+  )
+}
+
 // Firestore returns a Timestamp for createdAt on synced docs, or a plain JS
 // Date right after a local write before the round trip completes. This
 // normalizes either shape to 'YYYY-MM-DD' so entries can be grouped by day.
@@ -68,13 +102,27 @@ function entryDateStr(entry) {
   return null
 }
 
-export default function Memories({ embedded = false }) {
+export default function Memories({
+  embedded = false,
+  layout: layoutProp,
+  setLayout: setLayoutProp,
+  entryMode: entryModeProp,
+  setEntryMode: setEntryModeProp,
+  showAddModal: showAddModalProp,
+  setShowAddModal: setShowAddModalProp,
+}) {
   const { firebaseUser, couple } = useAuth()
   const names = useMemberNames(couple?.members)
 
   const [memories, setMemories] = useState([])
   const [loading, setLoading] = useState(true)
-  const [layout, setLayout] = useState('timeline') // 'timeline' | 'grid'
+  // These three all normally arrive as props from MemoriesHub, which hosts
+  // the "Add a photo" / "Log a milestone" / layout-toggle controls up in its
+  // tab row. The local fallbacks below only kick in if Memories is ever
+  // rendered standalone (embedded=false, no controlling parent).
+  const [localLayout, setLocalLayout] = useState('timeline')
+  const layout = layoutProp ?? localLayout
+  const setLayout = setLayoutProp ?? setLocalLayout
 
   const [caption, setCaption] = useState('')
   const [tagsInput, setTagsInput] = useState('')
@@ -87,10 +135,16 @@ export default function Memories({ embedded = false }) {
   const [saving, setSaving] = useState(false)
   const [lightbox, setLightbox] = useState(null)
   const [cropSrc, setCropSrc] = useState(null)
+  const [localShowAddModal, setLocalShowAddModal] = useState(false)
+  const showAddModal = showAddModalProp ?? localShowAddModal
+  const setShowAddModal = setShowAddModalProp ?? setLocalShowAddModal
+  const [gridYear, setGridYear] = useState('all') // year filter for the grid view's "More memories" section
   const fileInputRef = useRef(null)
 
   // Add-entry form: photo (default, existing flow) or a hand-logged milestone.
-  const [entryMode, setEntryMode] = useState('photo') // 'photo' | 'milestone'
+  const [localEntryMode, setLocalEntryMode] = useState('photo') // 'photo' | 'milestone'
+  const entryMode = entryModeProp ?? localEntryMode
+  const setEntryMode = setEntryModeProp ?? setLocalEntryMode
   const [milestoneType, setMilestoneType] = useState('first_date')
   const [milestoneTitle, setMilestoneTitle] = useState('')
   const [milestoneDate, setMilestoneDate] = useState(todayStr())
@@ -181,6 +235,7 @@ export default function Memories({ embedded = false }) {
       setCaption('')
       setTagsInput('')
       setPhotoData(null)
+      setShowAddModal(false)
       toast.success('Memory saved.')
     } catch (e) {
       toast.error("Couldn't save that memory — try again.")
@@ -207,6 +262,7 @@ export default function Memories({ embedded = false }) {
       })
       setMilestoneTitle('')
       setMilestoneDate(todayStr())
+      setShowAddModal(false)
       toast.success('Milestone added.')
     } catch (e) {
       toast.error("Couldn't save that milestone — try again.")
@@ -269,47 +325,124 @@ export default function Memories({ embedded = false }) {
     return true
   })
 
-  // Chronological feed mixing photos and milestones, grouped by day.
+  // Chronological feed mixing photos and milestones, grouped by day. Search
+  // and the active tag filter both apply here too (photo entries only —
+  // milestones don't carry captions/tags, so they always stay visible).
   const timelineGroups = useMemo(() => {
     const withDates = memories
       .map((m) => ({ ...m, _dateStr: entryDateStr(m) }))
       .filter((m) => m._dateStr)
+      .filter((m) => {
+        if ((m.entryType || 'photo') !== 'photo') return true
+        if (activeTag && !(m.tags || []).includes(activeTag)) return false
+        if (search.trim()) {
+          const q = search.trim().toLowerCase()
+          const hay = `${m.caption || ''} ${(m.tags || []).join(' ')}`.toLowerCase()
+          if (!hay.includes(q)) return false
+        }
+        return true
+      })
     const map = {}
     withDates.forEach((m) => {
       if (!map[m._dateStr]) map[m._dateStr] = []
       map[m._dateStr].push(m)
     })
     return Object.entries(map).sort((a, b) => (a[0] < b[0] ? 1 : -1))
+  }, [memories, activeTag, search])
+
+  // Grid view: a 3-up featured row (most recent) + the rest in a filterable
+  // "More memories" grid, with year pills built from whatever years actually
+  // have memories in them.
+  const featuredMemories = filteredMemories.slice(0, 3)
+  const restMemories = filteredMemories.slice(3)
+  const gridYears = useMemo(() => {
+    const years = new Set()
+    restMemories.forEach((m) => {
+      const d = entryDateStr(m)
+      if (d) years.add(dayjs(d).format('YYYY'))
+    })
+    return [...years].sort((a, b) => (a < b ? 1 : -1))
+  }, [restMemories])
+  const visibleRestMemories =
+    gridYear === 'all' ? restMemories : restMemories.filter((m) => dayjs(entryDateStr(m)).format('YYYY') === gridYear)
+
+  // Timeline view's sticky side index: everything grouped Year -> Month,
+  // newest first, mirroring the main feed so the two stay in sync.
+  const yearGroups = useMemo(() => {
+    const withDates = memories
+      .map((m) => ({ ...m, _dateStr: entryDateStr(m) }))
+      .filter((m) => m._dateStr)
+      .sort((a, b) => (a._dateStr < b._dateStr ? 1 : -1))
+    const byYear = new Map()
+    withDates.forEach((m) => {
+      const d = dayjs(m._dateStr)
+      const year = d.format('YYYY')
+      const month = d.format('MMMM')
+      if (!byYear.has(year)) byYear.set(year, { year, count: 0, monthsMap: new Map() })
+      const yearEntry = byYear.get(year)
+      yearEntry.count += 1
+      if (!yearEntry.monthsMap.has(month)) yearEntry.monthsMap.set(month, { month, monthIndex: d.month(), entries: [] })
+      yearEntry.monthsMap.get(month).entries.push(m)
+    })
+    return [...byYear.values()]
+      .sort((a, b) => (a.year < b.year ? 1 : -1))
+      .map((y) => ({ ...y, months: [...y.monthsMap.values()].sort((a, b) => b.monthIndex - a.monthIndex) }))
   }, [memories])
 
   return (
     <div>
-      <div className={embedded ? 'mb-5 flex justify-end' : 'mb-6 flex items-center justify-between flex-wrap gap-3'}>
-        {!embedded && (
+      {!embedded && (
+        <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-2xl font-semibold mb-1">Memories</h1>
-            <p className="text-sm text-[#7a6a7c]">Photos and milestones, in the order you made them.</p>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] mb-1.5">
+              Photos, places, and a love story
+            </div>
+            <h1 className="font-serif text-3xl font-semibold mb-1 leading-tight">Memories</h1>
+            <p className="text-sm text-[#7a6a7c]">Same people. A brighter tomorrow.</p>
           </div>
-        )}
-        <div className="flex items-center gap-1.5 bg-black/[0.03] rounded-full p-1 w-fit">
-          <button
-            onClick={() => setLayout('timeline')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-              layout === 'timeline' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
-            }`}
-          >
-            <FiList size={13} /> Timeline
-          </button>
-          <button
-            onClick={() => setLayout('grid')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-              layout === 'grid' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
-            }`}
-          >
-            <FiGrid size={13} /> Grid
-          </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setEntryMode('photo')
+                  setShowAddModal(true)
+                }}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-xl border border-black/10 bg-white hover:bg-black/[0.02] transition-colors"
+              >
+                <FiImage size={13} /> Add a photo
+              </button>
+              <button
+                onClick={() => {
+                  setEntryMode('milestone')
+                  setShowAddModal(true)
+                }}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-xl bg-peach text-white hover:brightness-95 transition"
+              >
+                <FiPlus size={13} /> Log a milestone
+              </button>
+            </div>
+            <div className="hidden sm:block w-px h-6 bg-black/10" />
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setLayout('timeline')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  layout === 'timeline' ? 'bg-plum text-white' : 'bg-white border border-black/10 text-[#7a6a7c]'
+                }`}
+              >
+                <FiList size={13} /> Timeline
+              </button>
+              <button
+                onClick={() => setLayout('grid')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  layout === 'grid' ? 'bg-plum text-white' : 'bg-white border border-black/10 text-[#7a6a7c]'
+                }`}
+              >
+                <FiGrid size={13} /> Grid
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       <CropModal
         imageSrc={cropSrc}
@@ -318,27 +451,44 @@ export default function Memories({ embedded = false }) {
         onCropped={handleCropped}
       />
 
-      <div className="bg-white border border-black/10 rounded-2xl p-5 mb-6">
-        <div className="flex items-center gap-1.5 bg-black/[0.03] rounded-full p-1 mb-4 w-fit">
-          <button
-            onClick={() => setEntryMode('photo')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-              entryMode === 'photo' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
-            }`}
+      {showAddModal && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center p-6 z-50"
+          onClick={() => setShowAddModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-5 max-w-lg w-full max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
           >
-            <FiCamera size={13} /> Add a photo
-          </button>
-          <button
-            onClick={() => setEntryMode('milestone')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-              entryMode === 'milestone' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
-            }`}
-          >
-            <FiStar size={13} /> Log a milestone
-          </button>
-        </div>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-1.5 bg-black/[0.03] rounded-full p-1 w-fit">
+                <button
+                  onClick={() => setEntryMode('photo')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    entryMode === 'photo' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
+                  }`}
+                >
+                  <FiCamera size={13} /> Add a photo
+                </button>
+                <button
+                  onClick={() => setEntryMode('milestone')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    entryMode === 'milestone' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
+                  }`}
+                >
+                  <FiStar size={13} /> Log a milestone
+                </button>
+              </div>
+              <button
+                onClick={() => setShowAddModal(false)}
+                aria-label="Close"
+                className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
+              >
+                <FiX size={14} />
+              </button>
+            </div>
 
-        {entryMode === 'photo' ? (
+            {entryMode === 'photo' ? (
           <>
             <input
               ref={fileInputRef}
@@ -405,6 +555,7 @@ export default function Memories({ embedded = false }) {
                       setPhotoData(null)
                       setCaption('')
                       setTagsInput('')
+                      setShowAddModal(false)
                     }}
                     disabled={saving}
                     className="py-2.5 px-5 rounded-xl text-sm border border-black/10"
@@ -459,8 +610,10 @@ export default function Memories({ embedded = false }) {
               Streak milestones show up here on their own — no need to log those by hand.
             </p>
           </div>
-        )}
-      </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {loading ? null : memories.length === 0 ? (
         <EmptyState
@@ -468,140 +621,201 @@ export default function Memories({ embedded = false }) {
           title="No memories saved yet"
           subtitle="Add your first photo or milestone above — the little moments are worth keeping."
         />
-      ) : layout === 'timeline' ? (
-        <div className="flex flex-col gap-4">
-          {timelineGroups.map(([dateStr, entries]) => (
-            <div key={dateStr} className="bg-white border border-black/10 rounded-2xl p-5">
-              <div className="text-xs font-semibold text-[#9a8a9c] uppercase tracking-wide mb-3">
-                {friendlyDate(dateStr)}
-              </div>
-              <div className="flex flex-col gap-3">
-                {entries.map((entry) => {
-                  if ((entry.entryType || 'photo') === 'milestone') {
-                    const meta = milestoneMeta(entry.milestoneType)
-                    const Icon = meta.icon
-                    return (
-                      <div
-                        key={entry.id}
-                        className="flex items-center gap-3 border border-black/5 rounded-xl p-3.5"
-                      >
-                        <div
-                          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                          style={{ backgroundColor: `${meta.color}20` }}
-                        >
-                          <Icon size={16} style={{ color: meta.color }} />
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-sm font-semibold">{entry.title}</div>
-                          <div className="text-[10.5px] text-[#9a8a9c]">
-                            {meta.label}
-                            {entry.auto ? ' · auto-tracked' : ` · added by ${names[entry.from] || '...'}`}
-                          </div>
-                        </div>
-                        {!entry.auto && entry.from === firebaseUser.uid && (
-                          <button
-                            onClick={() => removeMemory(entry.id)}
-                            aria-label="Delete milestone"
-                            className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
-                          >
-                            <FiX size={12} />
-                          </button>
-                        )}
-                      </div>
-                    )
-                  }
-                  return (
-                    <button
-                      key={entry.id}
-                      onClick={() => {
-                        setNewTag('')
-                        setLightbox(entry)
-                      }}
-                      className="flex items-center gap-3 border border-black/5 rounded-xl p-2.5 text-left hover:bg-black/[0.02]"
-                    >
-                      <img
-                        src={entry.photoData}
-                        alt={entry.caption || ''}
-                        className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm truncate">{entry.caption || 'Untitled memory'}</div>
-                        <div className="text-[10.5px] text-[#9a8a9c]">added by {names[entry.from] || '...'}</div>
-                      </div>
-                      {entry.pinned && <FiHeart size={13} className="text-peach flex-shrink-0" fill="currentColor" />}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
       ) : (
         <>
-          <div className="flex items-center gap-2 mb-3">
-            <div className="relative flex-1">
-              <FiSearch
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9a8a9c]"
-              />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search captions and tags"
-                className="w-full pl-8 pr-3 py-2 rounded-xl border border-black/10 text-sm"
-              />
-            </div>
-          </div>
+          {layout === 'grid' ? (
+            filteredMemories.length === 0 ? (
+              <div className="text-sm text-[#a892a9] py-6 text-center">No memories match that search.</div>
+            ) : (
+              <>
+                {featuredMemories.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                    {featuredMemories.map((m) => (
+                      <MemoryPhotoCard
+                        key={m.id}
+                        entry={m}
+                        names={names}
+                        size="lg"
+                        onOpen={() => {
+                          setNewTag('')
+                          setLightbox(m)
+                        }}
+                        onTogglePin={() => togglePinned(m)}
+                      />
+                    ))}
+                  </div>
+                )}
 
-          {allTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {allTags.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setActiveTag((cur) => (cur === t ? null : t))}
-                  className={`text-xs px-2.5 py-1 rounded-full border ${
-                    activeTag === t
-                      ? 'bg-peach text-plumdeep border-peach font-semibold'
-                      : 'border-black/10 text-[#7a6a7c]'
-                  }`}
-                >
-                  #{t}
-                </button>
-              ))}
-            </div>
-          )}
+                {restMemories.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                      <h2 className="text-base font-semibold text-plum">More memories</h2>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => setGridYear('all')}
+                          className={`text-xs px-3 py-1.5 rounded-full border font-semibold ${
+                            gridYear === 'all' ? 'bg-plum text-white border-plum' : 'border-black/10 text-[#7a6a7c]'
+                          }`}
+                        >
+                          All years
+                        </button>
+                        {gridYears.map((y) => (
+                          <button
+                            key={y}
+                            onClick={() => setGridYear(y)}
+                            className={`text-xs px-3 py-1.5 rounded-full border font-semibold ${
+                              gridYear === y ? 'bg-plum text-white border-plum' : 'border-black/10 text-[#7a6a7c]'
+                            }`}
+                          >
+                            {y}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-          {filteredMemories.length === 0 ? (
-            <div className="text-sm text-[#a892a9] py-6 text-center">
-              No memories match that search.
-            </div>
+                    {visibleRestMemories.length === 0 ? (
+                      <div className="text-sm text-[#a892a9] py-6 text-center">No memories for that year.</div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                        {visibleRestMemories.map((m) => (
+                          <MemoryPhotoCard
+                            key={m.id}
+                            entry={m}
+                            names={names}
+                            size="sm"
+                            onOpen={() => {
+                              setNewTag('')
+                              setLightbox(m)
+                            }}
+                            onTogglePin={() => togglePinned(m)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )
+          ) : timelineGroups.length === 0 ? (
+            <div className="text-sm text-[#a892a9] py-6 text-center">No memories match that search.</div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {filteredMemories.map((m) => (
-                <div key={m.id} className="relative rounded-2xl overflow-hidden border border-black/10">
-                  <button
-                    onClick={() => {
-                      setNewTag('')
-                      setLightbox(m)
-                    }}
-                    className="block w-full text-left"
-                  >
-                    <img src={m.photoData} alt={m.caption || ''} className="w-full h-40 object-cover" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      togglePinned(m)
-                    }}
-                    aria-label={m.pinned ? 'Remove from favorite memories' : 'Add to favorite memories'}
-                    aria-pressed={!!m.pinned}
-                    title={m.pinned ? 'Remove from favorite memories' : 'Add to favorite memories'}
-                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/40 flex items-center justify-center text-white"
-                  >
-                    <FiHeart size={13} fill={m.pinned ? 'currentColor' : 'none'} />
-                  </button>
-                </div>
-              ))}
+            <div className="grid lg:grid-cols-[1fr_300px] gap-6 items-start">
+              <div className="flex flex-col gap-6 min-w-0">
+                {timelineGroups.map(([dateStr, entries]) => (
+                  <div key={dateStr}>
+                    <div className="text-xs font-semibold text-[#9a8a9c] uppercase tracking-wide mb-3">
+                      {friendlyDate(dateStr)}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {entries.map((entry) => {
+                        if ((entry.entryType || 'photo') === 'milestone') {
+                          const meta = milestoneMeta(entry.milestoneType)
+                          const Icon = meta.icon
+                          return (
+                            <div
+                              key={entry.id}
+                              className="col-span-2 sm:col-span-3 flex items-center gap-3 border border-black/5 rounded-xl p-3.5 bg-white"
+                            >
+                              <div
+                                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                                style={{ backgroundColor: `${meta.color}20` }}
+                              >
+                                <Icon size={16} style={{ color: meta.color }} />
+                              </div>
+                              <div className="flex-1">
+                                <div className="text-sm font-semibold">{entry.title}</div>
+                                <div className="text-[10.5px] text-[#9a8a9c]">
+                                  {meta.label}
+                                  {entry.auto ? ' · auto-tracked' : ` · added by ${names[entry.from] || '...'}`}
+                                </div>
+                              </div>
+                              {!entry.auto && entry.from === firebaseUser.uid && (
+                                <button
+                                  onClick={() => removeMemory(entry.id)}
+                                  aria-label="Delete milestone"
+                                  className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
+                                >
+                                  <FiX size={12} />
+                                </button>
+                              )}
+                            </div>
+                          )
+                        }
+                        return (
+                          <MemoryPhotoCard
+                            key={entry.id}
+                            entry={entry}
+                            names={names}
+                            size="md"
+                            onOpen={() => {
+                              setNewTag('')
+                              setLightbox(entry)
+                            }}
+                            onTogglePin={() => togglePinned(entry)}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <aside className="hidden lg:block sticky top-4 bg-white border border-black/10 rounded-2xl p-5 max-h-[calc(100vh-2rem)] overflow-y-auto">
+                {yearGroups.map(({ year, count, months }) => (
+                  <div key={year} className="mb-5 last:mb-0">
+                    <div className="flex items-baseline justify-between mb-1">
+                      <span className="text-sm font-bold text-plum flex items-center gap-1.5">
+                        <FiCalendar size={13} className="text-[#9a8a9c]" /> {year}
+                      </span>
+                      <span className="text-[11px] text-[#9a8a9c]">{count} {count === 1 ? 'memory' : 'memories'}</span>
+                    </div>
+                    {months.map(({ month, entries }) => (
+                      <div key={month} className="relative pl-5 mt-3">
+                        <div className="absolute left-[3px] top-1 bottom-0 w-px bg-black/10" />
+                        <div className="absolute left-0 top-1 w-2 h-2 rounded-full bg-peach" />
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-[#9a8a9c] mb-2">
+                          {month} · {entries.length}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          {entries.map((entry) => {
+                            const isMilestone = (entry.entryType || 'photo') === 'milestone'
+                            const meta = isMilestone ? milestoneMeta(entry.milestoneType) : null
+                            const Icon = meta?.icon
+                            return (
+                              <div key={entry.id} className="flex items-center gap-2.5">
+                                {isMilestone ? (
+                                  <div
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                    style={{ backgroundColor: `${meta.color}20` }}
+                                  >
+                                    <Icon size={13} style={{ color: meta.color }} />
+                                  </div>
+                                ) : (
+                                  <img
+                                    src={entry.photoData}
+                                    alt=""
+                                    className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                                  />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="text-[12.5px] font-semibold truncate">
+                                    {entry.title || entry.caption || 'Untitled memory'}
+                                  </div>
+                                  <div className="text-[10px] text-[#9a8a9c] truncate">
+                                    {friendlyDate(entry._dateStr)} · {names[entry.from] || '...'}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+
+                <div className="jar-note text-[13px] mt-5">"A map of all the places we chose each other."</div>
+              </aside>
             </div>
           )}
         </>

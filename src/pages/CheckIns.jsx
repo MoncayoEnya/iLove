@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { collection, onSnapshot } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import { FaFire } from 'react-icons/fa'
-import { FiSmile } from 'react-icons/fi'
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { FiChevronLeft, FiChevronRight, FiSmile } from 'react-icons/fi'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { MOODS } from '../utils/moods'
-import { friendlyDate, lastNDays, todayStr, yesterdayStr } from '../utils/date'
+import { todayStr } from '../utils/date'
 import EmptyState from '../components/EmptyState'
 import { SkeletonList } from '../components/Skeleton'
 
@@ -16,76 +15,255 @@ function moodInfo(v) {
   return MOODS.find((m) => m.v === v)
 }
 
-// Higher = better mood. Used to plot a numeric trend line from the mood picker's labels.
-const MOOD_SCORE = { amazing: 5, good: 4, okay: 3, sad: 2, hard: 1 }
+// Firestore gives back a Timestamp on synced docs, a plain Date right after
+// a local write — handle both so a photo/memory shows up the moment it's
+// added, not just after the next sync.
+function tsToDateStr(ts) {
+  if (!ts) return null
+  if (typeof ts.toDate === 'function') return dayjs(ts.toDate()).format('YYYY-MM-DD')
+  if (ts instanceof Date) return dayjs(ts).format('YYYY-MM-DD')
+  return null
+}
+
+// --- Calendar --------------------------------------------------------
+// A plain, airy month grid — numbers with a small dot under any day either
+// of you checked in, today and the selected day marked with a ring, rather
+// than the boxed-cell treatment used elsewhere in the app.
+function CheckInCalendar({ month, selectedDate, onSelectDate, onPrevMonth, onNextMonth, checkinsByDate, today }) {
+  const startOfMonth = month.startOf('month')
+  const endOfMonth = month.endOf('month')
+  const gridStart = startOfMonth.startOf('week')
+  const gridEnd = endOfMonth.endOf('week')
+
+  const days = []
+  let cur = gridStart
+  while (cur.isBefore(gridEnd) || cur.isSame(gridEnd, 'day')) {
+    days.push(cur)
+    cur = cur.add(1, 'day')
+  }
+
+  return (
+    <div className="bg-white border border-black/10 rounded-2xl p-5 sm:p-6">
+      <div className="flex items-center justify-between mb-6">
+        <button
+          onClick={onPrevMonth}
+          aria-label="Previous month"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6a7c] hover:bg-black/5"
+        >
+          <FiChevronLeft size={18} />
+        </button>
+        <h2 className="font-serif text-xl font-semibold">{month.format('MMMM YYYY')}</h2>
+        <button
+          onClick={onNextMonth}
+          aria-label="Next month"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6a7c] hover:bg-black/5"
+        >
+          <FiChevronRight size={18} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 mb-2">
+        {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((w) => (
+          <div key={w} className="text-center text-[10px] font-semibold tracking-wide text-[#a892a9]">
+            {w}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-y-3">
+        {days.map((d) => {
+          const dStr = d.format('YYYY-MM-DD')
+          const inMonth = d.isSame(month, 'month')
+          const isToday = dStr === today
+          const isSelected = dStr === selectedDate
+          const info = checkinsByDate[dStr]
+          const hasCheckin = Boolean(info?.mine || info?.theirs)
+
+          return (
+            <button
+              key={dStr}
+              onClick={() => onSelectDate(dStr)}
+              disabled={!inMonth}
+              className={`flex flex-col items-center justify-center gap-1.5 py-1.5 ${inMonth ? '' : 'invisible'}`}
+            >
+              <span
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-sm transition-colors ${
+                  isSelected
+                    ? 'border-2 border-peach font-semibold'
+                    : isToday
+                    ? 'border border-peach/50'
+                    : 'hover:bg-black/5'
+                } ${isSelected || isToday ? 'text-peach' : 'text-ink'}`}
+              >
+                {d.date()}
+              </span>
+              <span className={`w-1.5 h-1.5 rounded-full ${hasCheckin ? 'bg-peach' : 'bg-transparent'}`} />
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="flex items-center gap-4 mt-6 pt-5 border-t border-black/10 text-xs text-[#9a8a9c]">
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-peach inline-block" /> Check-in completed
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full border border-peach/60 inline-block" /> Today
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// --- Day detail --------------------------------------------------------
+function MoodRow({ who, entry }) {
+  const m = entry ? moodInfo(entry.mood) : null
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-12 h-12 rounded-full bg-blush flex items-center justify-center text-2xl flex-shrink-0">
+        {m?.e || '·'}
+      </div>
+      <div>
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">{who}</div>
+        <div className="font-serif text-lg font-semibold">{m?.l || 'No check-in'}</div>
+      </div>
+    </div>
+  )
+}
+
+function DayDetail({ dateStr, today, mine, theirs, partnerName, photos }) {
+  const isToday = dateStr === today
+  const hasAnyCheckin = Boolean(mine || theirs)
+
+  return (
+    <div className="bg-white border border-black/10 rounded-2xl p-5 sm:p-6 h-full">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] flex items-center gap-2">
+        {dayjs(dateStr).format('dddd, MMM D, YYYY')}
+        {isToday && <span className="bg-blush text-plum px-2 py-0.5 rounded-full normal-case">Today</span>}
+      </div>
+
+      {!hasAnyCheckin ? (
+        <div className="mt-6">
+          <EmptyState icon={FiSmile} title="No check-in this day" subtitle="Nothing was logged yet for this date." />
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 grid sm:grid-cols-2 gap-5">
+            <MoodRow who="You" entry={mine} />
+            <MoodRow who={partnerName} entry={theirs} />
+          </div>
+
+          {(mine?.gratitude || theirs?.gratitude) && (
+            <div className="mt-6 pt-5 border-t border-black/10 space-y-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">Grateful for</div>
+              {mine?.gratitude && <div className="jar-note text-sm">You: {mine.gratitude}</div>}
+              {theirs?.gratitude && (
+                <div className="jar-note text-sm">
+                  {partnerName}: {theirs.gratitude}
+                </div>
+              )}
+            </div>
+          )}
+
+          {(mine?.journal || theirs?.journal) && (
+            <div className="mt-6 pt-5 border-t border-black/10 space-y-4">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">Notes</div>
+              {mine?.journal && (
+                <div>
+                  <div className="text-xs font-semibold text-[#9a8a9c] mb-1">You</div>
+                  <p className="font-serif text-[15px] leading-relaxed whitespace-pre-wrap">{mine.journal}</p>
+                </div>
+              )}
+              {theirs?.journal && (
+                <div>
+                  <div className="text-xs font-semibold text-[#9a8a9c] mb-1">{partnerName}</div>
+                  <p className="font-serif text-[15px] leading-relaxed whitespace-pre-wrap">{theirs.journal}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {photos.length > 0 && (
+        <div className="mt-6 pt-5 border-t border-black/10">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] mb-3">Photos</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {photos.map((src, i) => (
+              <img
+                key={i}
+                src={src}
+                alt=""
+                className="w-full aspect-square object-cover rounded-xl"
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function CheckIns() {
   const { firebaseUser, couple } = useAuth()
   const { partner, partnerUid, hasPartner } = usePartner()
   const coupleId = couple?.id
   const today = todayStr()
-  const yesterday = useMemo(() => yesterdayStr(), [])
 
   const [checkins, setCheckins] = useState([])
+  const [memories, setMemories] = useState([])
   const [loading, setLoading] = useState(true)
+  const [month, setMonth] = useState(() => dayjs())
+  const [selectedDate, setSelectedDate] = useState(today)
 
   useEffect(() => {
     if (!coupleId) return
-    const q = query(
-      collection(db, 'couples', coupleId, 'checkins'),
-      orderBy('date', 'desc'),
-      limit(120)
-    )
-    const unsub = onSnapshot(q, (snap) => {
-      setCheckins(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-      setLoading(false)
-    })
-    return unsub
+    const unsubs = [
+      onSnapshot(collection(db, 'couples', coupleId, 'checkins'), (snap) => {
+        setCheckins(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+        setLoading(false)
+      }),
+      onSnapshot(collection(db, 'couples', coupleId, 'memories'), (snap) =>
+        setMemories(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+      ),
+    ]
+    return () => unsubs.forEach((u) => u())
   }, [coupleId])
 
-  // Group check-ins by date -> array of entries for that date.
-  const byDate = useMemo(() => {
+  const checkinsByDate = useMemo(() => {
     const map = {}
     for (const c of checkins) {
-      if (!map[c.date]) map[c.date] = []
-      map[c.date].push(c)
+      if (!map[c.date]) map[c.date] = { mine: null, theirs: null }
+      if (c.uid === firebaseUser.uid) map[c.date].mine = c
+      else if (c.uid === partnerUid) map[c.date].theirs = c
     }
     return map
-  }, [checkins])
+  }, [checkins, firebaseUser.uid, partnerUid])
 
-  const trendDays = lastNDays(14).reverse()
+  const memoriesByDate = useMemo(() => {
+    const map = {}
+    for (const m of memories) {
+      const d = tsToDateStr(m.createdAt)
+      if (!d) continue
+      if (!map[d]) map[d] = []
+      map[d].push(m)
+    }
+    return map
+  }, [memories])
 
-  function entryFor(dateStr, uid) {
-    return (byDate[dateStr] || []).find((c) => c.uid === uid)
-  }
-
-  const chartData = useMemo(
-    () =>
-      trendDays.map((d) => {
-        const mine = entryFor(d, firebaseUser.uid)
-        const theirs = partnerUid ? entryFor(d, partnerUid) : null
-        return {
-          date: d,
-          label: friendlyDate(d, today, yesterday).slice(0, 3),
-          you: mine ? MOOD_SCORE[mine.mood] : null,
-          partner: theirs ? MOOD_SCORE[theirs.mood] : null,
-        }
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [byDate, trendDays.join(','), firebaseUser.uid, partnerUid]
-  )
-
-  const sortedDates = Object.keys(byDate).sort((a, b) => (a < b ? 1 : -1))
+  const selected = checkinsByDate[selectedDate] || { mine: null, theirs: null }
+  const selectedPhotos = [
+    selected.mine?.photoData,
+    selected.theirs?.photoData,
+    ...(memoriesByDate[selectedDate] || []).map((m) => m.photoData),
+  ].filter(Boolean)
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-semibold mb-1">Check-ins</h1>
-          <p className="text-sm text-[#7a6a7c]">
-            How you and {hasPartner ? partner?.displayName || 'your partner' : 'your partner'} have
-            been doing, day by day.
-          </p>
+          <p className="text-sm text-[#7a6a7c]">Better together, day by day.</p>
         </div>
         <div className="flex items-center gap-1.5 bg-peach/10 rounded-full px-3.5 py-2 text-sm text-plum font-semibold w-fit">
           <FaFire size={13} /> {couple?.streak || 0} day streak
@@ -100,146 +278,27 @@ export default function CheckIns() {
         </div>
       </div>
 
-      {/* ---- 14-day mood trend chart ---- */}
-      <div className="bg-white border border-black/10 rounded-2xl p-5 mb-5">
-        <h3 className="font-semibold mb-4 text-sm text-[#7a6a7c]">Mood trend</h3>
-        <div className="h-48">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#00000010" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#9a8a9c' }} axisLine={false} tickLine={false} />
-              <YAxis
-                domain={[1, 5]}
-                ticks={[1, 2, 3, 4, 5]}
-                tick={{ fontSize: 11, fill: '#9a8a9c' }}
-                axisLine={false}
-                tickLine={false}
-                width={20}
-              />
-              <Tooltip
-                contentStyle={{ borderRadius: 10, border: '1px solid #00000015', fontSize: 12 }}
-                formatter={(value, name) => [value ? MOODS.find((m) => MOOD_SCORE[m.v] === value)?.l : '—', name]}
-              />
-              <Line
-                type="monotone"
-                dataKey="you"
-                name="You"
-                stroke="#d97a6a"
-                strokeWidth={2}
-                dot={{ r: 3 }}
-                connectNulls
-              />
-              {hasPartner && (
-                <Line
-                  type="monotone"
-                  dataKey="partner"
-                  name={partner?.displayName || 'Partner'}
-                  stroke="#e8b978"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                  connectNulls
-                />
-              )}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* ---- 14-day mood trend ---- */}
-      <div className="bg-white border border-black/10 rounded-2xl p-5 mb-5 overflow-x-auto">
-        <h3 className="font-semibold mb-4 text-sm text-[#7a6a7c]">Last 14 days</h3>
-        <div className="flex gap-2 min-w-[560px]">
-          {trendDays.map((d) => {
-            const mine = entryFor(d, firebaseUser.uid)
-            const theirs = partnerUid ? entryFor(d, partnerUid) : null
-            return (
-              <div key={d} className="flex-1 text-center">
-                <div className="text-[9px] text-[#a892a9] mb-1.5 uppercase tracking-wide">
-                  {dayjs(d).format('dd')[0]}
-                </div>
-                <div className="flex flex-col gap-1 items-center">
-                  <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center text-sm ${
-                      mine ? 'bg-blush' : 'bg-black/5'
-                    }`}
-                    title={mine ? moodInfo(mine.mood)?.l : 'No check-in'}
-                  >
-                    {mine ? moodInfo(mine.mood)?.e : '·'}
-                  </div>
-                  {hasPartner && (
-                    <div
-                      className={`w-7 h-7 rounded-full flex items-center justify-center text-sm ${
-                        theirs ? 'bg-peachsoft' : 'bg-black/5'
-                      }`}
-                      title={theirs ? moodInfo(theirs.mood)?.l : 'No check-in'}
-                    >
-                      {theirs ? moodInfo(theirs.mood)?.e : '·'}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <div className="flex items-center gap-4 mt-4 text-xs text-[#9a8a9c]">
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-blush inline-block" /> You
-          </div>
-          {hasPartner && (
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-peachsoft inline-block" />{' '}
-              {partner?.displayName || 'Partner'}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ---- History feed ---- */}
       {loading ? (
         <SkeletonList count={3} lines={2} />
-      ) : sortedDates.length === 0 ? (
-        <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <EmptyState
-            icon={FiSmile}
-            title="No check-ins yet"
-            subtitle="Once you check in from the dashboard, they'll show up here."
-          />
-        </div>
       ) : (
-        <div className="flex flex-col gap-4">
-          {sortedDates.map((dateStr) => (
-            <div key={dateStr} className="bg-white border border-black/10 rounded-2xl p-5">
-              <div className="text-xs font-semibold text-[#9a8a9c] uppercase tracking-wide mb-3">
-                {friendlyDate(dateStr, today, yesterday)}
-              </div>
-              <div className="grid sm:grid-cols-2 gap-4">
-                {byDate[dateStr].map((c) => {
-                  const isMe = c.uid === firebaseUser.uid
-                  const who = isMe ? 'You' : partner?.displayName || 'Partner'
-                  const m = moodInfo(c.mood)
-                  return (
-                    <div key={c.id} className="border border-black/5 rounded-xl p-3.5">
-                      <div className="flex items-center gap-2 text-sm font-semibold">
-                        <span className="text-lg">{m?.e}</span> {who}
-                        <span className="text-xs font-normal text-[#a892a9]">{m?.l}</span>
-                      </div>
-                      {c.journal && (
-                        <div className="text-sm mt-2 whitespace-pre-wrap">{c.journal}</div>
-                      )}
-                      {c.gratitude && <div className="jar-note mt-2 text-sm">{c.gratitude}</div>}
-                      {c.photoData && (
-                        <img
-                          src={c.photoData}
-                          alt=""
-                          className="rounded-xl mt-2.5 max-h-40 w-full object-cover"
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
+        <div className="grid lg:grid-cols-[1fr_1fr] gap-5 items-start">
+          <CheckInCalendar
+            month={month}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            onPrevMonth={() => setMonth((m) => m.subtract(1, 'month'))}
+            onNextMonth={() => setMonth((m) => m.add(1, 'month'))}
+            checkinsByDate={checkinsByDate}
+            today={today}
+          />
+          <DayDetail
+            dateStr={selectedDate}
+            today={today}
+            mine={selected.mine}
+            theirs={selected.theirs}
+            partnerName={hasPartner ? partner?.displayName || 'Partner' : 'Partner'}
+            photos={selectedPhotos}
+          />
         </div>
       )}
     </div>

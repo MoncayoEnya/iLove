@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { ClipLoader } from 'react-spinners'
 import { useAuth } from '../context/AuthContext'
-import AuthCard from '../components/AuthCard'
+import AuthSplitLayout from '../components/AuthSplitLayout'
 import { loginSchema, zodResolver } from '../lib/schemas'
 
 export default function Login() {
@@ -28,7 +28,7 @@ export default function Login() {
   }
 
   return (
-    <AuthCard>
+    <AuthSplitLayout headline="A softer place to reconnect.">
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <label className="block text-xs text-[#6b5a6d] mt-3.5 mb-1.5 font-semibold">Email</label>
         <input
@@ -65,6 +65,6 @@ export default function Login() {
           Create an account
         </Link>
       </div>
-    </AuthCard>
+    </AuthSplitLayout>
   )
 }

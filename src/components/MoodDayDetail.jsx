@@ -5,15 +5,18 @@ import { FiSmile } from 'react-icons/fi'
 // instead of events/tasks/memories/notes.
 export default function MoodDayDetail({ dateStr, todayStr, mine, theirs, names, firebaseUser, partnerUid }) {
   const isToday = dateStr === todayStr
-  const label = dayjs(dateStr).format('dddd, MMMM D')
+  const d = dayjs(dateStr)
 
   return (
-    <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
-      <h3 className="font-semibold mb-3 flex items-center gap-2">
-        <FiSmile size={16} className="text-peach" />
-        {label}
+    <div className="bg-white border border-black/10 rounded-2xl p-5">
+      <div className="text-xs font-semibold text-[#9a8a9c] uppercase tracking-wide">{d.format('ddd')}</div>
+      <h3 className="font-serif text-2xl leading-tight mb-4 flex items-center gap-2 flex-wrap">
+        <FiSmile size={17} className="text-peach flex-shrink-0" />
+        {d.format('MMMM D, YYYY')}
         {isToday && (
-          <span className="text-[10.5px] bg-blush text-plum px-2 py-0.5 rounded-full font-semibold">Today</span>
+          <span className="text-[10.5px] font-sans font-semibold bg-blush text-plum px-2 py-0.5 rounded-full">
+            Today
+          </span>
         )}
       </h3>
 

@@ -21,6 +21,53 @@ body {
   @apply bg-blush rounded-xl p-4 font-serif italic text-plumdeep text-center;
 }
 
+/* Date ideas — section header bars (Cozy & Relaxed, Out & About, etc).
+   One-off decorative colors, kept out of the peach/gold/plum accent system
+   on purpose (they're category labels, not brand accents), but still get a
+   dark-mode pass using the same override technique as the rest of this file. */
+.cat-cozy { background: #fdeaea; color: #a33d3d; }
+.cat-outabout { background: #fdf3d9; color: #8a6416; }
+.cat-trynew { background: #fde9d9; color: #a15a1f; }
+.cat-movie { background: #e3ecfa; color: #31569c; }
+.cat-creative { background: #f1e6f5; color: #7a3f8c; }
+
+.place-tag-date-spot { background: #d9f2ea; color: #1c7a63; }
+.place-tag-restaurant { background: #fbe3ec; color: #a33d6b; }
+.place-tag-outdoor { background: #e3f3df; color: #3f7a3f; }
+.place-tag-travel-goal { background: #fde3d0; color: #b0591c; }
+.place-tag-favorite { background: #fdf0c9; color: #8a6416; }
+.place-tag-other { background: #efe9f0; color: #7a6a7c; }
+
+html.dark .place-tag-date-spot { background: #17332c; color: #6fd6b8; }
+html.dark .place-tag-restaurant { background: #3a2130; color: #f2a8c8; }
+html.dark .place-tag-outdoor { background: #22331f; color: #a8db9c; }
+html.dark .place-tag-travel-goal { background: #3a2718; color: #f2b078; }
+html.dark .place-tag-favorite { background: #3a3320; color: #e8c96b; }
+html.dark .place-tag-other { background: #2a222c; color: #b8a8ba; }
+
+.place-dot-date-spot { background: #1c7a63; }
+.place-dot-restaurant { background: #a33d6b; }
+.place-dot-outdoor { background: #3f7a3f; }
+.place-dot-travel-goal { background: #b0591c; }
+.place-dot-favorite { background: #8a6416; }
+.place-dot-other { background: #9a8a9c; }
+
+html.dark .place-dot-date-spot { background: #6fd6b8; }
+html.dark .place-dot-restaurant { background: #f2a8c8; }
+html.dark .place-dot-outdoor { background: #a8db9c; }
+html.dark .place-dot-travel-goal { background: #f2b078; }
+html.dark .place-dot-favorite { background: #e8c96b; }
+html.dark .place-dot-other { background: #b8a8ba; }
+
+/* Cover-photo placeholder for a place card that has no image — a soft
+   per-category wash instead of one flat gray box everywhere. */
+.place-cover-date-spot { background: linear-gradient(135deg, #d9f2ea, #eef8f4); }
+.place-cover-restaurant { background: linear-gradient(135deg, #fbe3ec, #fdf1f5); }
+.place-cover-outdoor { background: linear-gradient(135deg, #e3f3df, #f2f9ef); }
+.place-cover-travel-goal { background: linear-gradient(135deg, #fde3d0, #fdf1e6); }
+.place-cover-favorite { background: linear-gradient(135deg, #fdf0c9, #fdf8e6); }
+.place-cover-other { background: linear-gradient(135deg, #efe9f0, #f7f3f8); }
+
 /* Visible keyboard-focus ring on every interactive element. Mouse/touch
    clicks don't trigger :focus-visible, so this only shows up for keyboard
    and assistive-tech navigation. */
@@ -206,3 +253,72 @@ html:not(.dark)[data-palette='ocean'] .text-plum { color: #1c6e7a; }
 html:not(.dark)[data-palette='ocean'] .text-plumdeep { color: #1f4a57; }
 html:not(.dark)[data-palette='ocean'] .text-plumdeep\/60 { color: rgba(31, 74, 87, 0.6); }
 html:not(.dark)[data-palette='ocean'] .text-plumdeep\/70 { color: rgba(31, 74, 87, 0.7); }
+
+.place-tag-date-spot { background: #d9f2ea; color: #1c7a63; }
+.place-tag-restaurant { background: #fbe3ec; color: #a33d6b; }
+.place-tag-outdoor { background: #e3f3df; color: #3f7a3f; }
+.place-tag-travel-goal { background: #fde3d0; color: #b0591c; }
+.place-tag-favorite { background: #fdf0c9; color: #8a6416; }
+.place-tag-other { background: #efe9f0; color: #7a6a7c; }
+
+html.dark .place-tag-date-spot { background: #17332c; color: #6fd6b8; }
+html.dark .place-tag-restaurant { background: #3a2130; color: #f2a8c8; }
+html.dark .place-tag-outdoor { background: #22331f; color: #a8db9c; }
+html.dark .place-tag-travel-goal { background: #3a2718; color: #f2b078; }
+html.dark .place-tag-favorite { background: #3a3320; color: #e8c96b; }
+html.dark .place-tag-other { background: #2a222c; color: #b8a8ba; }
+
+.place-dot-date-spot { background: #1c7a63; }
+.place-dot-restaurant { background: #a33d6b; }
+.place-dot-outdoor { background: #3f7a3f; }
+.place-dot-travel-goal { background: #b0591c; }
+.place-dot-favorite { background: #8a6416; }
+.place-dot-other { background: #9a8a9c; }
+
+html.dark .place-dot-date-spot { background: #6fd6b8; }
+html.dark .place-dot-restaurant { background: #f2a8c8; }
+html.dark .place-dot-outdoor { background: #a8db9c; }
+html.dark .place-dot-travel-goal { background: #f2b078; }
+html.dark .place-dot-favorite { background: #e8c96b; }
+html.dark .place-dot-other { background: #b8a8ba; }
+
+/* Cover-photo placeholder for a place card that has no image — a soft
+   per-category wash instead of one flat gray box everywhere. */
+.place-cover-date-spot { background: linear-gradient(135deg, #d9f2ea, #eef8f4); }
+.place-cover-restaurant { background: linear-gradient(135deg, #fbe3ec, #fdf1f5); }
+.place-cover-outdoor { background: linear-gradient(135deg, #e3f3df, #f2f9ef); }
+.place-cover-travel-goal { background: linear-gradient(135deg, #fde3d0, #fdf1e6); }
+.place-cover-favorite { background: linear-gradient(135deg, #fdf0c9, #fdf8e6); }
+.place-cover-other { background: linear-gradient(135deg, #efe9f0, #f7f3f8); }
+
+/* Shared playlist — per-tag colors, same one-off-palette pattern as the
+   .place-tag-* set above (shared places). playlist-tag-* colors a song's
+   tag pill; playlist-cover-* is the gradient wash behind a song's music
+   icon when no cover art URL was given. */
+.playlist-tag-our-song { background: #fdf0c9; color: #8a6416; }
+.playlist-tag-love { background: #fbe3ec; color: #a33d6b; }
+.playlist-tag-chill { background: #e6ecfa; color: #3c5c9c; }
+.playlist-tag-hype { background: #fde3d0; color: #b0591c; }
+.playlist-tag-nostalgic { background: #f1e6f5; color: #7a3f8c; }
+.playlist-tag-other { background: #efe9f0; color: #7a6a7c; }
+
+html.dark .playlist-tag-our-song { background: #3a3320; color: #e8c96b; }
+html.dark .playlist-tag-love { background: #3a2130; color: #f2a8c8; }
+html.dark .playlist-tag-chill { background: #1f2a3d; color: #8fb3e8; }
+html.dark .playlist-tag-hype { background: #3a2718; color: #f2b078; }
+html.dark .playlist-tag-nostalgic { background: #2f2036; color: #d6a8e8; }
+html.dark .playlist-tag-other { background: #2a222c; color: #b8a8ba; }
+
+.playlist-cover-our-song { background: linear-gradient(135deg, #fdf0c9, #fdf8e6); }
+.playlist-cover-love { background: linear-gradient(135deg, #fbe3ec, #fdf1f5); }
+.playlist-cover-chill { background: linear-gradient(135deg, #e6ecfa, #f1f4fc); }
+.playlist-cover-hype { background: linear-gradient(135deg, #fde3d0, #fdf1e6); }
+.playlist-cover-nostalgic { background: linear-gradient(135deg, #f1e6f5, #f8f1fa); }
+.playlist-cover-other { background: linear-gradient(135deg, #efe9f0, #f7f3f8); }
+
+html.dark .playlist-cover-our-song { background: linear-gradient(135deg, #3a3320, #2b2719); }
+html.dark .playlist-cover-love { background: linear-gradient(135deg, #3a2130, #2b1e28); }
+html.dark .playlist-cover-chill { background: linear-gradient(135deg, #1f2a3d, #1c2230); }
+html.dark .playlist-cover-hype { background: linear-gradient(135deg, #3a2718, #2b2019); }
+html.dark .playlist-cover-nostalgic { background: linear-gradient(135deg, #2f2036, #251a29); }
+html.dark .playlist-cover-other { background: linear-gradient(135deg, #2a222c, #241d26); }

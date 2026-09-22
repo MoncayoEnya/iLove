@@ -34,6 +34,53 @@ function daysUntil(dateStr) {
   return Math.round(diff / 86400000)
 }
 
+// Circular progress ring, same gradient-stroke technique as the Dashboard's
+// relationship-health ring. gradientId must be unique per rendered ring
+// (a page can show several at once) — callers pass the goal's Firestore id.
+function GoalRing({ pct, size = 108, stroke = 9, gradientId }) {
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const clamped = Math.max(0, Math.min(100, pct))
+  const offset = c - (clamped / 100) * c
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 flex-shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(61,35,64,0.08)" strokeWidth={stroke} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={`url(#${gradientId})`}
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={offset}
+        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+      />
+      <defs>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#e8a87c" />
+          <stop offset="100%" stopColor="#f0c987" />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}
+
+// Ring + centered percentage, the piece reused by both the featured goal
+// and the compact grid (only the featured one also shows a "saved" caption).
+function RingStat({ pct, size, stroke, idSuffix, caption }) {
+  return (
+    <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+      <GoalRing pct={pct} size={size} stroke={stroke} gradientId={`savings-ring-${idSuffix}`} />
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className={caption ? 'text-2xl font-bold text-ink' : 'text-base font-bold text-ink'}>{pct}%</span>
+        {caption && <span className="text-[10px] uppercase tracking-wide text-[#9a8a9c] mt-0.5">{caption}</span>}
+      </div>
+    </div>
+  )
+}
+
 export default function SharedSavings() {
   const { firebaseUser, couple } = useAuth()
   const coupleId = couple?.id
@@ -92,7 +139,7 @@ export default function SharedSavings() {
   }
 
   function openContribute(goal) {
-    setContribGoalId(goal.id)
+    setContribGoalId((cur) => (cur === goal.id ? null : goal.id))
     setContribAmount('')
     setContribNote('')
   }
@@ -122,18 +169,54 @@ export default function SharedSavings() {
     }
   }
 
-  const activeGoals = useMemo(
-    () => goals.filter((g) => (g.savedAmount || 0) < g.targetAmount),
-    [goals]
-  )
-  const fundedGoals = useMemo(
-    () => goals.filter((g) => (g.savedAmount || 0) >= g.targetAmount),
-    [goals]
-  )
+  const activeGoals = useMemo(() => goals.filter((g) => (g.savedAmount || 0) < g.targetAmount), [goals])
+  const fundedGoals = useMemo(() => goals.filter((g) => (g.savedAmount || 0) >= g.targetAmount), [goals])
+  const [featured, ...rest] = activeGoals
+
+  function ContributeForm({ goal }) {
+    return (
+      <div className="border-t border-black/10 mt-4 pt-3.5">
+        <div className="flex flex-col sm:flex-row gap-2 mb-2">
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            autoFocus
+            className="flex-1 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+            placeholder="Amount"
+            value={contribAmount}
+            onChange={(e) => setContribAmount(e.target.value)}
+          />
+          <input
+            className="flex-1 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+            placeholder="Note (optional)"
+            value={contribNote}
+            onChange={(e) => setContribNote(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addContribution(goal)}
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => addContribution(goal)}
+            disabled={!contribAmount || Number(contribAmount) <= 0}
+            className="flex-1 sm:flex-none px-5 py-2 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
+          >
+            Add
+          </button>
+          <button
+            onClick={() => setContribGoalId(null)}
+            className="px-4 py-2 rounded-xl font-semibold text-sm border border-black/10"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
-      <div className="mb-6 flex items-start justify-between gap-3">
+      <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold mb-1">Shared savings</h1>
           <p className="text-sm text-[#7a6a7c]">
@@ -142,20 +225,20 @@ export default function SharedSavings() {
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="py-2.5 px-4 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep flex items-center gap-1.5 flex-shrink-0"
+          className="py-2.5 px-4 rounded-full font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep flex items-center gap-1.5 flex-shrink-0 shadow-sm hover:shadow-md transition-shadow"
         >
           {showForm ? <FiX size={14} /> : <FiPlus size={14} />}
           {showForm ? 'Cancel' : 'New goal'}
         </button>
       </div>
 
-      <div className="bg-blush/60 border border-black/10 rounded-xl px-4 py-2.5 mb-4 text-xs text-[#6b5a6d]">
-        This is just a tracker for you two — no bank or card is connected. Log contributions by
-        hand whenever you set money aside.
+      <div className="bg-blush/50 border border-black/10 rounded-xl px-4 py-3 mb-5 text-xs sm:text-sm text-[#6b5a6d]">
+        This is just a tracker for you two — no bank or card is connected. Log contributions by hand
+        whenever you set money aside.
       </div>
 
       {showForm && (
-        <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
+        <div className="bg-white border border-black/10 rounded-2xl p-5 mb-5">
           <h3 className="font-semibold mb-3">New savings goal</h3>
           <div className="space-y-3">
             <div>
@@ -211,120 +294,145 @@ export default function SharedSavings() {
         </div>
       )}
 
-      {activeGoals.map((goal) => {
-        const pct = Math.min(100, Math.round(((goal.savedAmount || 0) / goal.targetAmount) * 100))
-        const remaining = Math.max(0, goal.targetAmount - (goal.savedAmount || 0))
-        const dLeft = daysUntil(goal.deadline)
-        const contributions = [...(goal.contributions || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      {featured &&
+        (() => {
+          const goal = featured
+          const pct = Math.min(100, Math.round(((goal.savedAmount || 0) / goal.targetAmount) * 100))
+          const remaining = Math.max(0, goal.targetAmount - (goal.savedAmount || 0))
+          const dLeft = daysUntil(goal.deadline)
+          const contributions = [...(goal.contributions || [])].sort((a, b) =>
+            (b.date || '').localeCompare(a.date || '')
+          )
 
-        return (
-          <div key={goal.id} className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
-            <div className="flex items-start justify-between gap-2 mb-3">
-              <div>
-                <h3 className="font-semibold">{goal.title}</h3>
-                {goal.deadline && (
-                  <p className="text-xs text-[#9a8a9c] mt-0.5">
-                    {dLeft >= 0 ? `${dLeft} day${dLeft === 1 ? '' : 's'} left` : 'Deadline passed'} · target{' '}
-                    {new Date(`${goal.deadline}T00:00:00`).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </p>
+          return (
+            <div className="bg-white border border-black/10 rounded-2xl p-5 sm:p-6 mb-5">
+              <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+                <div className="flex items-start sm:items-center gap-5 flex-1 min-w-0">
+                  <RingStat pct={pct} size={108} stroke={9} idSuffix={goal.id} caption="saved" />
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-xl font-bold text-ink truncate">{goal.title}</h3>
+                      <button
+                        onClick={() => removeGoal(goal)}
+                        aria-label="Remove goal"
+                        className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
+                      >
+                        <FiTrash2 size={13} />
+                      </button>
+                    </div>
+                    {goal.deadline && (
+                      <p className="text-xs text-[#9a8a9c] mt-0.5">
+                        {dLeft >= 0 ? `${dLeft} day${dLeft === 1 ? '' : 's'} left` : 'Deadline passed'} · target{' '}
+                        {new Date(`${goal.deadline}T00:00:00`).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap gap-x-8 gap-y-2 mt-4">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-[#9a8a9c]">Saved</div>
+                        <div className="text-lg font-bold text-ink">{formatMoney(goal.savedAmount || 0)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-[#9a8a9c]">Goal</div>
+                        <div className="text-lg font-bold text-ink">{formatMoney(goal.targetAmount)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-[#9a8a9c]">
+                          Left to go
+                        </div>
+                        <div className="text-lg font-bold text-ink">{formatMoney(remaining)}</div>
+                      </div>
+                    </div>
+
+                    {contribGoalId === goal.id ? (
+                      <ContributeForm goal={goal} />
+                    ) : (
+                      <button
+                        onClick={() => openContribute(goal)}
+                        className="mt-4 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full border border-black/10 text-sm font-semibold text-peach hover:bg-peach/5 transition-colors"
+                      >
+                        <FiPlus size={13} /> Log a contribution
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {contributions.length > 0 && (
+                  <div className="lg:w-52 flex-shrink-0 lg:pl-6 lg:border-l lg:border-black/10 pt-5 lg:pt-0 border-t lg:border-t-0 border-black/5">
+                    <h4 className="text-[10px] font-bold uppercase tracking-wide text-[#9a8a9c] mb-2">Recent</h4>
+                    {contributions.slice(0, 4).map((c, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                        <span className="text-[#7a6a7c] truncate">
+                          {names[c.by] || '...'}
+                          {c.note ? ` — ${c.note}` : ''}
+                        </span>
+                        <span className="font-bold text-ink flex-shrink-0">+{formatMoney(c.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-              <button
-                onClick={() => removeGoal(goal)}
-                aria-label="Remove goal"
-                className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
-              >
-                <FiTrash2 size={13} />
-              </button>
             </div>
+          )
+        })()}
 
-            <div className="flex items-baseline justify-between mb-2">
-              <span className="text-sm font-semibold">
-                {formatMoney(goal.savedAmount || 0)} of {formatMoney(goal.targetAmount)}
-              </span>
-              <span className="text-xs text-[#9a8a9c] font-semibold">{pct}%</span>
-            </div>
-            <div className="h-2 rounded-full bg-black/5 overflow-hidden mb-1">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-peach to-gold transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <p className="text-xs text-[#9a8a9c] mb-4">{formatMoney(remaining)} left to go</p>
+      {rest.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+          {rest.map((goal) => {
+            const pct = Math.min(100, Math.round(((goal.savedAmount || 0) / goal.targetAmount) * 100))
+            const remaining = Math.max(0, goal.targetAmount - (goal.savedAmount || 0))
 
-            {contribGoalId === goal.id ? (
-              <div className="border-t border-black/10 pt-3 mt-1">
-                <div className="flex gap-2 mb-2">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    autoFocus
-                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-                    placeholder="Amount"
-                    value={contribAmount}
-                    onChange={(e) => setContribAmount(e.target.value)}
-                  />
-                  <input
-                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-                    placeholder="Note (optional)"
-                    value={contribNote}
-                    onChange={(e) => setContribNote(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addContribution(goal)}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => addContribution(goal)}
-                    disabled={!contribAmount || Number(contribAmount) <= 0}
-                    className="flex-1 py-2 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
-                  >
-                    Add
-                  </button>
-                  <button
-                    onClick={() => setContribGoalId(null)}
-                    className="py-2 px-4 rounded-xl font-semibold text-sm border border-black/10"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => openContribute(goal)}
-                className="w-full py-2.5 rounded-xl font-semibold text-sm border border-black/10 flex items-center justify-center gap-1.5"
-              >
-                <FiPlus size={13} /> Log a contribution
-              </button>
-            )}
-
-            {contributions.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-black/10">
-                <h4 className="text-xs font-semibold text-[#6b5a6d] mb-2">Recent contributions</h4>
-                {contributions.slice(0, 5).map((c, i) => (
-                  <div key={i} className="flex items-center justify-between py-1.5 text-sm">
-                    <span className="text-[#7a6a7c]">
-                      {names[c.by] || '...'}
-                      {c.note ? ` — ${c.note}` : ''}
-                    </span>
-                    <span className="font-semibold flex-shrink-0 ml-2">+{formatMoney(c.amount)}</span>
+            return (
+              <div key={goal.id} className="bg-white border border-black/10 rounded-2xl p-5">
+                <div className="flex items-center gap-4">
+                  <RingStat pct={pct} size={72} stroke={7} idSuffix={goal.id} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="font-bold text-base text-ink truncate">{goal.title}</h4>
+                      <button
+                        onClick={() => removeGoal(goal)}
+                        aria-label="Remove goal"
+                        className="w-6 h-6 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
+                      >
+                        <FiTrash2 size={11} />
+                      </button>
+                    </div>
+                    <p className="text-sm text-[#9a8a9c] mt-0.5 truncate">
+                      {formatMoney(goal.savedAmount || 0)} of {formatMoney(goal.targetAmount)} ·{' '}
+                      {formatMoney(remaining)} left
+                    </p>
                   </div>
-                ))}
+                </div>
+
+                {contribGoalId === goal.id ? (
+                  <ContributeForm goal={goal} />
+                ) : (
+                  <button
+                    onClick={() => openContribute(goal)}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-black/10 text-xs font-semibold text-peach hover:bg-peach/5 transition-colors"
+                  >
+                    <FiPlus size={12} /> Log a contribution
+                  </button>
+                )}
               </div>
-            )}
-          </div>
-        )
-      })}
+            )
+          })}
+        </div>
+      )}
 
       {fundedGoals.length > 0 && (
         <div className="bg-white border border-black/10 rounded-2xl p-5">
           <h3 className="font-semibold mb-3">Fully funded</h3>
           {fundedGoals.map((goal) => (
-            <div key={goal.id} className="flex items-center justify-between py-2.5 border-b border-black/10 last:border-b-0">
+            <div
+              key={goal.id}
+              className="flex items-center justify-between py-2.5 border-b border-black/10 last:border-b-0"
+            >
               <div>
                 <div>{goal.title}</div>
                 <div className="text-xs text-[#9a8a9c] mt-0.5">{formatMoney(goal.targetAmount)} saved</div>

@@ -10,7 +10,7 @@ import BottomSheet from './BottomSheet'
 // collection loads once when the sheet first opens, then everything is
 // filtered client-side as the person types — plenty fast for the volume of
 // data one couple accumulates, without standing up a dedicated search index.
-export default function GlobalSearch() {
+export default function GlobalSearch({ light = false }) {
   const { couple } = useAuth()
   const coupleId = couple?.id
   const [open, setOpen] = useState(false)
@@ -71,7 +71,9 @@ export default function GlobalSearch() {
       <button
         onClick={() => setOpen(true)}
         aria-label="Search"
-        className="w-9 h-9 rounded-lg border border-white/15 flex items-center justify-center flex-shrink-0 text-[#f3e6e8]"
+        className={`w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+          light ? 'border-black/10 text-plumdeep' : 'border-white/15 text-[#f3e6e8]'
+        }`}
       >
         <FiSearch size={16} />
       </button>

@@ -16,15 +16,12 @@ import {
   FiArrowRight,
   FiCalendar,
   FiCamera,
-  FiCheckSquare,
   FiFrown,
   FiGift,
-  FiHeart,
-  FiInfo,
-  FiMail,
+  FiHelpCircle,
   FiMeh,
   FiSmile,
-  FiTarget,
+  FiSun,
 } from 'react-icons/fi'
 import { FaFire } from 'react-icons/fa'
 import { db } from '../firebase'
@@ -33,33 +30,51 @@ import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { compressImage } from '../utils/compressImage'
 import { MOODS } from '../utils/moods'
-import { anniversaryInfo, friendlyDate, ordinalSuffix, todayStr } from '../utils/date'
+import { anniversaryInfo, ordinalSuffix, todayStr } from '../utils/date'
 import { computeRelationshipHealth } from '../utils/relationshipHealth'
 
 // Circular progress ring for the relationship-health score. Pure SVG, no
 // deps — a stroked circle with a partial dasharray offset by score.
-function HealthRing({ score, size = 64 }) {
-  const stroke = 5
+function HealthRing({ score, size = 96 }) {
+  const stroke = 8
   const r = (size - stroke) / 2
   const c = 2 * Math.PI * r
   const offset = c - (Math.min(100, Math.max(0, score)) / 100) * c
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 flex-shrink-0">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(61,35,64,0.15)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(61,35,64,0.1)" strokeWidth={stroke} />
       <circle
         cx={size / 2}
         cy={size / 2}
         r={r}
         fill="none"
-        stroke="#3d2340"
+        stroke="url(#healthRingGradient)"
         strokeWidth={stroke}
         strokeLinecap="round"
         strokeDasharray={c}
         strokeDashoffset={offset}
         style={{ transition: 'stroke-dashoffset 0.6s ease' }}
       />
+      <defs>
+        <linearGradient id="healthRingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#e8a87c" />
+          <stop offset="100%" stopColor="#f0c987" />
+        </linearGradient>
+      </defs>
     </svg>
   )
+}
+
+function moodIconFor(v) {
+  if (v === 'amazing' || v === 'good') return FiSmile
+  if (v === 'okay') return FiMeh
+  if (v === 'sad' || v === 'hard') return FiFrown
+  return FiMeh
+}
+
+// amazing -> 5 ... hard -> 1, used to turn a week of checkins into bar heights
+function moodScore(v) {
+  return { amazing: 5, good: 4, okay: 3, sad: 2, hard: 1 }[v] || 0
 }
 
 export default function Dashboard() {
@@ -79,7 +94,11 @@ export default function Dashboard() {
   const [photoLoading, setPhotoLoading] = useState(false)
   const [showHealthInfo, setShowHealthInfo] = useState(false)
   const [checkinOpen, setCheckinOpen] = useState(false)
+  const [moodView, setMoodView] = useState('partner') // 'partner' | 'you' — flip the mood card
+  const [nudgeSending, setNudgeSending] = useState(false)
+  const [nudgeCooldown, setNudgeCooldown] = useState(false)
   const photoInputRef = useRef(null)
+  const moodTouchXRef = useRef(null)
 
   const coupleId = couple?.id
   const sevenDaysAgo = dayjs().subtract(6, 'day').format('YYYY-MM-DD')
@@ -104,7 +123,6 @@ export default function Dashboard() {
     return () => unsubs.forEach((u) => u())
   }, [coupleId, today, sevenDaysAgo])
 
-  const tasks = allTasks.filter((t) => !t.done)
   const checkins = weekCheckins.filter((c) => c.date === today)
   const myCheckin = checkins.find((c) => c.uid === firebaseUser.uid)
   const partnerCheckin = checkins.find((c) => c.uid !== firebaseUser.uid)
@@ -139,19 +157,29 @@ export default function Dashboard() {
     daysUntilNextEvent,
   })
 
-  const newAppreciationCount = jar.filter(
-    (n) => n.from !== firebaseUser.uid && (n.createdAt?.seconds || 0) >= dayjs().subtract(1, 'day').unix()
-  ).length
+  const healthMessage =
+    health.score >= 70
+      ? "You're thriving, together."
+      : health.score >= 40
+      ? "You're building something good."
+      : "There's room to grow, together."
+  const healthSubMessage = health.score >= 70 ? 'Keep doing what you\u2019re doing.' : 'Small moments add up. Keep showing up.'
 
-  const todayTasks = allTasks.filter((t) => t.dueDate === today)
-  const todayGoalDone = todayTasks.filter((t) => t.done).length
-  const todayGoalTotal = todayTasks.length
+  // --- This week's mood bars ------------------------------------------
+  const weekDates = Array.from({ length: 7 }, (_, i) => dayjs(sevenDaysAgo).add(i, 'day').format('YYYY-MM-DD'))
+  const weekBars = weekDates.map((date) => {
+    const dayCheckins = weekCheckins.filter((c) => c.date === date)
+    const avg = dayCheckins.length
+      ? dayCheckins.reduce((sum, c) => sum + moodScore(c.mood), 0) / dayCheckins.length
+      : null
+    return { date, label: dayjs(date).format('ddd'), avg }
+  })
 
-  function moodIcon(v) {
-    if (v === 'amazing' || v === 'good') return FiSmile
-    if (v === 'okay') return FiMeh
-    if (v === 'sad' || v === 'hard') return FiFrown
-    return FiMeh
+  function moodBarClasses(avg) {
+    if (avg == null) return 'bg-black/10'
+    if (avg >= 4) return 'bg-gradient-to-t from-peach to-gold'
+    if (avg >= 2.5) return 'bg-peachsoft'
+    return 'bg-[#e5b7b7]'
   }
 
   function greeting() {
@@ -159,12 +187,6 @@ export default function Dashboard() {
     if (h < 12) return 'Good morning'
     if (h < 18) return 'Good afternoon'
     return 'Good evening'
-  }
-
-  function nextEventLabel(ev) {
-    const diff = dayjs(ev.date).diff(dayjs(today), 'day')
-    const day = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : friendlyDate(ev.date, today)
-    return ev.time ? `${day}, ${ev.time}` : day
   }
 
   async function handlePhotoPick(e) {
@@ -250,6 +272,42 @@ export default function Dashboard() {
     }
   }
 
+  function flipMoodView() {
+    setMoodView((v) => (v === 'you' ? 'partner' : 'you'))
+  }
+
+  function onMoodTouchStart(e) {
+    moodTouchXRef.current = e.touches[0].clientX
+  }
+
+  function onMoodTouchEnd(e) {
+    if (moodTouchXRef.current == null) return
+    const dx = e.changedTouches[0].clientX - moodTouchXRef.current
+    moodTouchXRef.current = null
+    if (Math.abs(dx) > 30) flipMoodView()
+  }
+
+  async function sendNudge() {
+    if (!coupleId || nudgeSending || nudgeCooldown) return
+    setNudgeSending(true)
+    try {
+      await addDoc(collection(db, 'couples', coupleId, 'nudges'), {
+        from: firebaseUser.uid,
+        createdAt: new Date(),
+      })
+      toast.success(`Nudge sent to ${partner?.displayName || 'your partner'}.`)
+      setNudgeCooldown(true)
+      setTimeout(() => setNudgeCooldown(false), 60000)
+    } catch {
+      toast.error("Couldn't send that nudge — try again in a bit.")
+    } finally {
+      setNudgeSending(false)
+    }
+  }
+
+  const displayedMood = moodView === 'you' ? myCheckin?.mood : partnerCheckin?.mood
+  const DisplayedMoodIcon = moodIconFor(displayedMood)
+
   return (
     <div>
       {!hasPartner ? (
@@ -260,254 +318,245 @@ export default function Dashboard() {
           <p className="text-sm text-[#7a6a7c]">Waiting for your partner to join with your invite code.</p>
         </div>
       ) : (
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-peach via-[#f5a3ae] to-gold p-5 sm:p-7 text-plumdeep mb-6">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden flex-shrink-0 bg-white/40 border-2 border-white/70 flex items-center justify-center text-plumdeep text-lg font-semibold">
-                {partner?.photoURL ? (
-                  <img src={partner.photoURL} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  (partner?.displayName || '?')[0]?.toUpperCase()
-                )}
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-plumdeep/70">
-                  {greeting()}, {profile.displayName}
-                </p>
-                <h1 className="text-xl sm:text-2xl font-semibold mt-0.5 flex items-center gap-2">
-                  You &amp; {partner?.displayName || '...'}{' '}
-                  <FiHeart size={18} className="text-plumdeep/80 flex-shrink-0" fill="currentColor" aria-hidden="true" />
-                </h1>
-                {partner?.loveLanguage && (
-                  <p className="text-xs text-plumdeep/70 mt-1">
-                    {partner.displayName || 'Your partner'}'s love language is{' '}
-                    <span className="font-semibold">{partner.loveLanguage}</span>
-                  </p>
-                )}
-              </div>
-            </div>
+        <div className="mb-6">
+          <p className="text-sm text-[#7a6a7c] mb-4">
+            {greeting()}, {profile.displayName}
+          </p>
 
-            <button
-              onClick={() => setShowHealthInfo((v) => !v)}
-              className="flex items-center gap-2.5 shrink-0"
-              aria-expanded={showHealthInfo}
-              aria-label="Show how relationship health is calculated"
-            >
-              <div className="text-right">
-                <div className="text-[10.5px] font-semibold uppercase tracking-wide text-plumdeep/70">
-                  Relationship
-                </div>
-                <div className="text-[10.5px] font-semibold uppercase tracking-wide text-plumdeep/70 flex items-center gap-1 justify-end">
-                  health <FiInfo size={12} className="text-plumdeep/60" />
-                </div>
-              </div>
-              <div className="relative">
+          {/* Row 1 — Relationship pulse (tall) + Streak/Today stacked in the other two columns */}
+          <div className="grid grid-cols-1 md:grid-cols-[1.8fr_1fr_1fr] gap-4">
+            <div className="md:row-span-2 bg-white border border-black/10 rounded-2xl p-6 flex flex-col sm:flex-row items-center sm:items-start gap-6">
+              <button
+                onClick={() => setShowHealthInfo((v) => !v)}
+                className="relative flex-shrink-0"
+                aria-expanded={showHealthInfo}
+                aria-label="Show how relationship health is calculated"
+              >
                 <HealthRing score={health.score} />
-                <div className="absolute inset-0 flex items-center justify-center text-sm font-bold">
+                <div className="absolute inset-0 flex items-center justify-center text-2xl font-bold">
                   {health.score}%
                 </div>
+              </button>
+              <div className="text-center sm:text-left flex-1">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">
+                    Relationship pulse
+                  </span>
+                  <button
+                    onClick={() => setShowHealthInfo((v) => !v)}
+                    className="hidden sm:flex items-center gap-1 text-xs text-peach font-semibold"
+                  >
+                    See details <FiArrowRight size={11} />
+                  </button>
+                </div>
+                <p className="text-lg font-semibold mt-1">{healthMessage}</p>
+                <p className="text-sm text-[#9a8a9c] mt-1">{healthSubMessage}</p>
+
+                {showHealthInfo && (
+                  <div className="mt-4 bg-[#faf6f8] rounded-2xl p-4 text-xs space-y-1.5 text-left">
+                    <p className="font-semibold text-[13px] mb-1.5">How this is calculated</p>
+                    {health.factors.map((f) => (
+                      <div key={f.key} className="flex items-center justify-between">
+                        <span>{f.label}</span>
+                        <span className="font-semibold">{Math.round(f.value * 100)}%</span>
+                      </div>
+                    ))}
+                    <p className="text-[#9a8a9c] pt-1">A snapshot, not a grade — it moves with what you both do this week.</p>
+                  </div>
+                )}
               </div>
-            </button>
+            </div>
+
+            <div className="bg-white border border-black/10 rounded-2xl p-5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] mb-3">Streak</div>
+              <FaFire size={22} className="text-peach" />
+              <div className="text-2xl font-semibold mt-2">
+                {couple?.streak || 0} Day{couple?.streak === 1 ? '' : 's'}
+              </div>
+              <div className="text-xs text-[#9a8a9c] mt-1">Consistency builds closer tomorrows.</div>
+            </div>
+
+            <div className="rounded-2xl p-5 text-plumdeep bg-gradient-to-br from-peach/25 to-gold/30 border border-peach/20">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-plumdeep/70">Today</span>
+                <span className="text-[11px] font-semibold text-plumdeep/70">{dayjs(today).format('MMM D')}</span>
+              </div>
+              {nextEvent ? (
+                <>
+                  <FiGift size={20} />
+                  <div className="text-lg font-semibold mt-2">{nextEvent.title}</div>
+                  <div className="text-xs text-plumdeep/70 mt-1">
+                    {daysUntilNextEvent === 0
+                      ? 'Make today special'
+                      : `In ${daysUntilNextEvent} day${daysUntilNextEvent === 1 ? '' : 's'}`}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <FiCalendar size={20} />
+                  <div className="text-lg font-semibold mt-2">Nothing planned</div>
+                  <Link to="/calendar" className="text-xs text-plumdeep/70 underline mt-1 inline-block">
+                    Add something to look forward to
+                  </Link>
+                </>
+              )}
+            </div>
+
+            <div className="bg-white border border-black/10 rounded-2xl p-5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] mb-3">Daily check-in</div>
+              {myCheckin ? (
+                <>
+                  <FiSun size={20} className="text-peach" />
+                  <div className="text-lg font-semibold mt-2">
+                    Checked in: {MOODS.find((m) => m.v === myCheckin.mood)?.l}
+                  </div>
+                  <div className="text-xs text-[#9a8a9c] mt-1">Nice — see you again tomorrow.</div>
+                </>
+              ) : (
+                <>
+                  <FiSun size={20} className="text-peach" />
+                  <div className="text-lg font-semibold mt-2">You haven't checked in today.</div>
+                  <div className="text-xs text-[#9a8a9c] mt-1 mb-3">A little check-in goes a long way.</div>
+                  <button
+                    onClick={() => setCheckinOpen(true)}
+                    className="px-4 py-2 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep"
+                  >
+                    Check in
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div className="bg-white border border-black/10 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">Anniversary</span>
+                {anniversary && (
+                  <span className="text-[11px] font-semibold text-[#9a8a9c]">
+                    {(profile?.anniversaryDate || partner?.anniversaryDate)}
+                  </span>
+                )}
+              </div>
+              {!anniversary ? (
+                <>
+                  <FiCalendar size={20} className="text-peach" />
+                  <div className="text-sm text-[#9a8a9c] mt-2">
+                    Add your anniversary date on your{' '}
+                    <Link to="/profile" className="underline">
+                      profile
+                    </Link>{' '}
+                    to see the countdown here.
+                  </div>
+                </>
+              ) : anniversary.daysUntil === 0 ? (
+                <>
+                  <FiCalendar size={20} className="text-peach" />
+                  <div className="text-lg font-semibold mt-2 text-peach">Happy anniversary!</div>
+                  <div className="text-xs text-[#9a8a9c] mt-1">
+                    {anniversary.years} year{anniversary.years === 1 ? '' : 's'} together today.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <FiCalendar size={20} className="text-peach" />
+                  <div className="text-2xl font-semibold mt-2">
+                    {anniversary.daysUntil} <span className="text-sm font-medium">days</span>
+                  </div>
+                  <div className="text-xs text-[#9a8a9c] mt-1">
+                    Until your {anniversary.years}
+                    {ordinalSuffix(anniversary.years)} anniversary. More love ahead.
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
-          {showHealthInfo && (
-            <div className="mt-4 bg-white/70 rounded-2xl p-4 text-xs space-y-1.5">
-              <p className="font-semibold text-[13px] mb-1.5">How this is calculated</p>
-              {health.factors.map((f) => (
-                <div key={f.key} className="flex items-center justify-between">
-                  <span>{f.label}</span>
-                  <span className="font-semibold">{Math.round(f.value * 100)}%</span>
+          {/* Row 2 — Love jar quote / this week / partner mood */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div className="bg-white border border-black/10 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">Love jar</span>
+                <Link to="/memories?tab=jar" className="text-xs text-peach font-semibold flex items-center gap-1">
+                  See all <FiArrowRight size={11} />
+                </Link>
+              </div>
+              {!lastJarNote ? (
+                <div className="text-sm text-[#a892a9]">No notes saved yet.</div>
+              ) : (
+                <div className="jar-note">"{lastJarNote.text}"</div>
+              )}
+            </div>
+
+            <div className="bg-white border border-black/10 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">This week</span>
+                <span className="text-[11px] text-[#9a8a9c]">
+                  {dayjs(weekDates[0]).format('MMM D')} – {dayjs(weekDates[6]).format('MMM D')}
+                </span>
+              </div>
+              <div className="flex items-end justify-between gap-2 h-24">
+                {weekBars.map((b) => (
+                  <div key={b.date} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                    <div
+                      className={`w-full rounded-full ${moodBarClasses(b.avg)}`}
+                      style={{ height: `${b.avg == null ? 6 : Math.max(10, (b.avg / 5) * 100)}%` }}
+                    />
+                    <span className="text-[10px] text-[#9a8a9c]">{b.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              className="bg-white border border-black/10 rounded-2xl p-5 select-none"
+              onTouchStart={onMoodTouchStart}
+              onTouchEnd={onMoodTouchEnd}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <button onClick={flipMoodView} className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">
+                    {moodView === 'you' ? 'Your mood' : `${partner?.displayName || 'Partner'}'s mood`}
+                  </span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <span className={`w-1.5 h-1.5 rounded-full ${moodView === 'you' ? 'bg-peach' : 'bg-black/15'}`} />
+                    <span className={`w-1.5 h-1.5 rounded-full ${moodView === 'partner' ? 'bg-peach' : 'bg-black/15'}`} />
+                  </div>
+                  <span title="Tap the card or the dots to switch between your mood and theirs.">
+                    <FiHelpCircle size={13} className="text-[#a892a9]" />
+                  </span>
                 </div>
-              ))}
-              <p className="text-plumdeep/60 pt-1">A snapshot, not a grade — it moves with what you both do this week.</p>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-5">
-            <div className="bg-white/70 rounded-2xl p-3">
-              <FaFire size={18} className="text-peach" />
-              <div className="text-lg font-semibold mt-1.5">{couple?.streak || 0} Day{couple?.streak === 1 ? '' : 's'}</div>
-              <div className="text-[10.5px] text-plumdeep/70">Streak</div>
-            </div>
-
-            <div className="bg-white/70 rounded-2xl p-3">
-              {(() => {
-                const MoodIcon = moodIcon(partnerCheckin?.mood)
-                return <MoodIcon size={18} className="text-peach" />
-              })()}
-              <div className="text-lg font-semibold mt-1.5">
-                {MOODS.find((m) => m.v === partnerCheckin?.mood)?.l || 'Not yet'}
               </div>
-              <div className="text-[10.5px] text-plumdeep/70">{partner?.displayName || 'Partner'}'s mood</div>
-            </div>
-
-            <div className="bg-white/70 rounded-2xl p-3">
-              <FiMail size={18} className="text-peach" />
-              <div className="text-lg font-semibold mt-1.5">{newAppreciationCount}</div>
-              <div className="text-[10.5px] text-plumdeep/70">New appreciation</div>
-            </div>
-
-            <div className="bg-white/70 rounded-2xl p-3">
-              <FiCalendar size={18} className="text-peach" />
-              <div className="text-lg font-semibold mt-1.5">{nextEvent ? nextEventLabel(nextEvent) : 'None yet'}</div>
-              <div className="text-[10.5px] text-plumdeep/70">
-                {nextEvent ? nextEvent.title : 'Next date'}
+              <button onClick={flipMoodView} className="flex items-center gap-3 w-full text-left">
+                <div className="w-9 h-9 rounded-full bg-[#faf6f8] flex items-center justify-center flex-shrink-0">
+                  <DisplayedMoodIcon size={17} className="text-peach" />
+                </div>
+                <div className="text-lg font-semibold">
+                  {MOODS.find((m) => m.v === displayedMood)?.l || 'Not yet'}
+                </div>
+              </button>
+              <div className="text-xs text-[#9a8a9c] mt-2">
+                {moodView === 'you'
+                  ? myCheckin
+                    ? 'You checked in today.'
+                    : "You haven't checked in today."
+                  : partnerCheckin
+                  ? `${partner?.displayName || 'They'} checked in today.`
+                  : `${partner?.displayName || 'They'} haven't checked in today. A little nudge can go a long way.`}
               </div>
-            </div>
-
-            <div className="bg-white/70 rounded-2xl p-3 col-span-2 sm:col-span-1">
-              <FiTarget size={18} className="text-peach" />
-              <div className="text-lg font-semibold mt-1.5">
-                {todayGoalTotal === 0 ? '—' : `${todayGoalDone}/${todayGoalTotal}`}
-              </div>
-              <div className="text-[10.5px] text-plumdeep/70">
-                {todayGoalTotal === 0 ? "No tasks due today" : "Today's goal"}
-              </div>
+              {moodView === 'partner' && !partnerCheckin && (
+                <button
+                  onClick={sendNudge}
+                  disabled={nudgeSending || nudgeCooldown}
+                  className="w-full mt-3 py-2 rounded-xl font-semibold text-sm border border-black/10 disabled:opacity-50"
+                >
+                  {nudgeCooldown ? 'Nudge sent' : nudgeSending ? 'Sending…' : 'Send a nudge'}
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold flex items-center gap-2">
-              <FiSmile size={16} className="text-peach" /> Daily check-in
-            </h3>
-            <Link to="/checkins" className="text-xs text-peach font-semibold flex items-center gap-1">
-              History <FiArrowRight size={12} />
-            </Link>
-          </div>
-          {myCheckin ? (
-            <>
-              <div className="text-sm text-[#9a8a9c]">
-                You checked in today: {MOODS.find((m) => m.v === myCheckin.mood)?.e}{' '}
-                {MOODS.find((m) => m.v === myCheckin.mood)?.l}
-              </div>
-              {myCheckin.journal && (
-                <div className="text-sm mt-3 whitespace-pre-wrap">{myCheckin.journal}</div>
-              )}
-              {myCheckin.gratitude && <div className="jar-note mt-3 text-sm">{myCheckin.gratitude}</div>}
-              {myCheckin.photoData && (
-                <img
-                  src={myCheckin.photoData}
-                  alt="Today's check-in"
-                  className="rounded-xl mt-3 max-h-48 w-full object-cover"
-                />
-              )}
-            </>
-          ) : (
-            <>
-              <div className="text-sm text-[#9a8a9c] mb-3">You haven't checked in today.</div>
-              <button
-                onClick={() => setCheckinOpen(true)}
-                className="w-full py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep"
-              >
-                Check in for today
-              </button>
-            </>
-          )}
-        </div>
-
-        <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <FiCheckSquare size={16} className="text-peach" /> Today's tasks
-          </h3>
-          {tasks.length === 0 ? (
-            <div className="text-sm text-[#a892a9]">Nothing open — nice.</div>
-          ) : (
-            <>
-              <div className="md:hidden text-sm text-[#7a6a7c]">
-                {tasks.length} remaining
-              </div>
-              <div className="hidden md:block">
-                {tasks.slice(0, 4).map((t) => (
-                  <div key={t.id} className="text-sm py-1.5">
-                    • {t.text}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          <Link to="/tasks" className="inline-block mt-3 text-sm border border-black/10 rounded-xl px-4 py-2">
-            {tasks.length === 0 ? 'Go to tasks' : 'See all tasks'}
-          </Link>
-        </div>
-
-        <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <FiCalendar size={16} className="text-peach" /> Coming up
-          </h3>
-          {events.length === 0 ? (
-            <div className="text-sm text-[#a892a9]">Nothing planned yet.</div>
-          ) : (
-            <>
-              <div className="md:hidden text-sm">
-                <span className="text-[10.5px] bg-blush text-plum px-2 py-0.5 rounded-full font-semibold mr-2">
-                  {events[0].date}
-                </span>
-                {events[0].title}
-                {events.length > 1 && (
-                  <div className="text-xs text-[#9a8a9c] mt-1.5">+{events.length - 1} more upcoming</div>
-                )}
-              </div>
-              <div className="hidden md:block">
-                {events.slice(0, 3).map((ev) => (
-                  <div key={ev.id} className="text-sm py-1.5">
-                    <span className="text-[10.5px] bg-blush text-plum px-2 py-0.5 rounded-full font-semibold mr-2">
-                      {ev.date}
-                    </span>
-                    {ev.title}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          <Link to="/calendar" className="inline-block mt-3 text-sm border border-black/10 rounded-xl px-4 py-2">
-            {events.length === 0 ? 'Open calendar' : 'See full calendar'}
-          </Link>
-        </div>
-
-        <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <FiGift size={16} className="text-peach" /> Anniversary
-          </h3>
-          {!anniversary ? (
-            <div className="text-sm text-[#a892a9]">
-              Add your anniversary date on your{' '}
-              <Link to="/profile" className="underline">
-                profile
-              </Link>{' '}
-              to see the countdown here.
-            </div>
-          ) : anniversary.daysUntil === 0 ? (
-            <div className="text-sm font-semibold text-peach">
-              Happy anniversary! {anniversary.years} year{anniversary.years === 1 ? '' : 's'} together today.
-            </div>
-          ) : (
-            <div className="text-sm">
-              <span className="text-2xl font-semibold">{anniversary.daysUntil}</span>{' '}
-              day{anniversary.daysUntil === 1 ? '' : 's'} until your {anniversary.years}
-              {ordinalSuffix(anniversary.years)}{' '}
-              anniversary.
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <FiHeart size={16} className="text-peach" /> Latest from the love jar
-          </h3>
-          {!lastJarNote ? (
-            <div className="text-sm text-[#a892a9]">No notes saved yet.</div>
-          ) : (
-            <div className="jar-note">"{lastJarNote.text}"</div>
-          )}
-          <Link to="/memories?tab=jar" className="inline-block mt-3 text-sm border border-black/10 rounded-xl px-4 py-2">
-            Open love jar
-          </Link>
-        </div>
-      </div>
 
       <BottomSheet open={checkinOpen} onClose={() => setCheckinOpen(false)} title="Daily check-in">
         <div className="flex gap-2 mt-2">

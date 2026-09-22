@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 import {
-  FiChevronDown,
-  FiChevronUp,
   FiExternalLink,
   FiHeart,
   FiMoon,
+  FiMoreVertical,
   FiMusic,
+  FiPause,
+  FiPlay,
+  FiPlus,
   FiSun,
   FiTrash2,
   FiZap,
@@ -69,11 +71,13 @@ export default function SharedPlaylist() {
   const [songs, setSongs] = useState([])
   const [activeFilter, setActiveFilter] = useState(null) // null = all
   const [expanded, setExpanded] = useState({}) // songId -> bool, embed open/closed
+  const [menuOpenId, setMenuOpenId] = useState(null)
 
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
   const [url, setUrl] = useState('')
   const [note, setNote] = useState('')
+  const [coverUrl, setCoverUrl] = useState('')
   const [tag, setTag] = useState('our-song')
   const [saving, setSaving] = useState(false)
 
@@ -103,6 +107,7 @@ export default function SharedPlaylist() {
         artist: artist.trim(),
         url: url.trim(),
         note: note.trim(),
+        coverUrl: coverUrl.trim(),
         tag,
         addedBy: firebaseUser.uid,
         createdAt: serverTimestamp(),
@@ -111,6 +116,7 @@ export default function SharedPlaylist() {
       setArtist('')
       setUrl('')
       setNote('')
+      setCoverUrl('')
       toast.success('Added to your playlist.')
     } catch (e) {
       toast.error("Couldn't add that — try again.")
@@ -124,52 +130,84 @@ export default function SharedPlaylist() {
       await deleteDoc(doc(db, 'couples', coupleId, 'playlist', song.id))
     } catch (e) {
       toast.error("Couldn't remove that — try again.")
+    } finally {
+      setMenuOpenId(null)
     }
   }
 
   function toggleExpanded(id) {
     setExpanded((e) => ({ ...e, [id]: !e[id] }))
+    setMenuOpenId(null)
+  }
+
+  function toggleMenu(id, e) {
+    e.stopPropagation()
+    setMenuOpenId((cur) => (cur === id ? null : id))
   }
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold mb-1">Shared playlist</h1>
-        <p className="text-sm text-[#7a6a7c]">
-          Songs that mean something — yours to build together, one track at a time.
+        <p className="flex items-center gap-1.5 text-sm text-[#7a6a7c]">
+          Songs that mean something — build it together, one track at a time.
+          <FiHeart size={13} className="text-peach flex-shrink-0" />
         </p>
       </div>
 
-      <div className="bg-white border border-black/10 rounded-2xl p-5 mb-4">
-        <h3 className="font-semibold mb-3">Add a song</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+      <div className="bg-white border border-black/10 rounded-2xl p-5 sm:p-6 mb-5">
+        <h3 className="font-bold text-lg mb-4">Add a song</h3>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-semibold text-[#7a6a7c] mb-1.5">Song title</label>
+            <input
+              className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+              placeholder="e.g. Golden Hour"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#7a6a7c] mb-1.5">Artist</label>
+            <input
+              className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+              placeholder="e.g. JVKE"
+              value={artist}
+              onChange={(e) => setArtist(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#7a6a7c] mb-1.5">Link</label>
+            <input
+              className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+              placeholder="Spotify, YouTube..."
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#7a6a7c] mb-1.5">Note (optional)</label>
+            <input
+              className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+              placeholder="e.g. Reminds me of our trip"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="mb-3">
+          <label className="block text-xs font-semibold text-[#7a6a7c] mb-1.5">Cover image URL (optional)</label>
           <input
-            className="px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-            placeholder="Song title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <input
-            className="px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-            placeholder="Artist (optional)"
-            value={artist}
-            onChange={(e) => setArtist(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+            placeholder="Paste an album art image link"
+            value={coverUrl}
+            onChange={(e) => setCoverUrl(e.target.value)}
           />
         </div>
-        <input
-          className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm mb-2"
-          placeholder="YouTube or Spotify link (optional)"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        <input
-          className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm mb-3"
-          placeholder="Note — why this one, when it's from, what it means..."
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
 
-        <div className="flex flex-wrap gap-1.5 mb-3">
+        <div className="flex flex-wrap gap-1.5 mb-4">
           {TAGS.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
@@ -190,17 +228,19 @@ export default function SharedPlaylist() {
         <button
           onClick={addSong}
           disabled={saving || !title.trim()}
-          className="w-full py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
+          className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
         >
-          Add to playlist
+          <FiPlus size={15} /> {saving ? 'Adding…' : 'Add to playlist'}
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mb-4">
+      <div className="flex flex-wrap gap-2 mb-5">
         <button
           onClick={() => setActiveFilter(null)}
-          className={`text-[11px] font-medium px-2.5 py-1.5 rounded-full border transition-colors ${
-            !activeFilter ? 'bg-plumdeep text-white border-plumdeep' : 'border-black/10 text-[#9a8a9c] hover:bg-black/5'
+          className={`text-xs font-semibold px-3.5 py-2 rounded-full border transition-colors ${
+            !activeFilter
+              ? 'bg-plumdeep text-white border-plumdeep'
+              : 'bg-white border-black/10 text-[#7a6a7c] hover:bg-black/5'
           }`}
         >
           All
@@ -209,76 +249,112 @@ export default function SharedPlaylist() {
           <button
             key={value}
             onClick={() => setActiveFilter(value)}
-            className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1.5 rounded-full border transition-colors ${
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full border transition-colors ${
               activeFilter === value
                 ? 'bg-plumdeep text-white border-plumdeep'
-                : 'border-black/10 text-[#9a8a9c] hover:bg-black/5'
+                : 'bg-white border-black/10 text-[#7a6a7c] hover:bg-black/5'
             }`}
           >
-            <Icon size={11} /> {label}
+            <Icon size={12} /> {label}
           </button>
         ))}
       </div>
 
-      <div className="bg-white border border-black/10 rounded-2xl p-5">
-        {filtered.length === 0 ? (
+      {filtered.length === 0 ? (
+        <div className="bg-white border border-black/10 rounded-2xl p-5">
           <EmptyState
             icon={FiMusic}
             title="No songs yet"
             subtitle="Add the first track above — your song, a favorite, or one that just reminds you of them."
           />
-        ) : (
-          <div className="grid grid-cols-1 gap-3">
-            {filtered.map((s) => {
-              const meta = tagMeta(s.tag)
-              const Icon = meta.icon
-              const embed = detectEmbed(s.url)
-              const isOpen = !!expanded[s.id]
-              return (
-                <div key={s.id} className="border border-black/10 rounded-xl p-3.5 bg-[#faf6f8]">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-[#a892a9]">
-                      <Icon size={12} /> {meta.label}
+        </div>
+      ) : (
+        <div
+          onClick={() => menuOpenId && setMenuOpenId(null)}
+          className="bg-white border border-black/10 rounded-2xl overflow-hidden divide-y divide-black/5"
+        >
+          {filtered.map((s) => {
+            const meta = tagMeta(s.tag)
+            const Icon = meta.icon
+            const embed = detectEmbed(s.url)
+            const isOpen = !!expanded[s.id]
+            const menuOpen = menuOpenId === s.id
+            return (
+              <div key={s.id} className="relative">
+                <div className="flex items-center gap-3 px-4 py-3 hover:bg-black/[0.02] transition-colors">
+                  <div
+                    className={`w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center playlist-cover-${meta.value}`}
+                  >
+                    {s.coverUrl ? (
+                      <img src={s.coverUrl} alt={s.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <Icon size={20} className={`playlist-tag-${meta.value}`} style={{ background: 'transparent' }} />
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm sm:text-base text-ink truncate">{s.title}</div>
+                    {s.artist && <div className="text-xs sm:text-sm text-[#9a8a9c] truncate">{s.artist}</div>}
+                    {s.note && (
+                      <p className="text-xs text-[#9a8a9c] italic font-serif truncate mt-0.5">"{s.note}"</p>
+                    )}
+                  </div>
+
+                  <span
+                    className={`hidden sm:inline-flex flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap playlist-tag-${meta.value}`}
+                  >
+                    {meta.label}
+                  </span>
+
+                  <button
+                    onClick={(e) => toggleMenu(s.id, e)}
+                    aria-label="More options"
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-[#9a8a9c] hover:bg-black/5 flex-shrink-0"
+                  >
+                    <FiMoreVertical size={16} />
+                  </button>
+                </div>
+
+                {menuOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute right-4 top-14 z-10 bg-white border border-black/10 rounded-xl shadow-lg py-1.5 w-48 text-sm"
+                  >
+                    <div className="px-3.5 pb-1.5 mb-1 border-b border-black/5 text-[10.5px] text-[#9a8a9c]">
+                      Added by {names[s.addedBy] || '...'}
                     </div>
+                    {embed && (
+                      <button
+                        onClick={() => toggleExpanded(s.id)}
+                        className="w-full text-left px-3.5 py-2 hover:bg-black/5 flex items-center gap-2"
+                      >
+                        {isOpen ? <FiPause size={13} /> : <FiPlay size={13} />}
+                        {isOpen ? 'Hide player' : 'Play'}
+                      </button>
+                    )}
+                    {!embed && s.url && (
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => setMenuOpenId(null)}
+                        className="w-full text-left px-3.5 py-2 hover:bg-black/5 flex items-center gap-2"
+                      >
+                        <FiExternalLink size={13} /> Open link
+                      </a>
+                    )}
                     <button
                       onClick={() => removeSong(s)}
-                      aria-label="Remove"
-                      className="w-6 h-6 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
+                      className="w-full text-left px-3.5 py-2 hover:bg-black/5 text-[#9b3b3b] flex items-center gap-2"
                     >
-                      <FiTrash2 size={11} />
+                      <FiTrash2 size={13} /> Remove
                     </button>
                   </div>
+                )}
 
-                  <div className="text-sm font-semibold text-ink mt-1.5">{s.title}</div>
-                  {s.artist && <div className="text-xs text-[#9a8a9c] mt-0.5">{s.artist}</div>}
-                  {s.note && <p className="text-sm text-ink leading-snug mt-1.5">{s.note}</p>}
-
-                  <div className="flex items-center justify-between mt-2.5">
-                    <span className="text-[11px] text-[#9a8a9c]">added by {names[s.addedBy] || '...'}</span>
-
-                    {s.url &&
-                      (embed ? (
-                        <button
-                          onClick={() => toggleExpanded(s.id)}
-                          className="flex items-center gap-1 text-[11px] font-semibold text-[#7a6a7c] hover:text-ink"
-                        >
-                          {isOpen ? 'Hide player' : 'Play'}
-                          {isOpen ? <FiChevronUp size={11} /> : <FiChevronDown size={11} />}
-                        </button>
-                      ) : (
-                        <a
-                          href={s.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-1 text-[11px] font-semibold text-[#7a6a7c] hover:text-ink"
-                        >
-                          Open link <FiExternalLink size={11} />
-                        </a>
-                      ))}
-                  </div>
-
-                  {embed && isOpen && (
-                    <div className="mt-3 rounded-lg overflow-hidden">
+                {embed && isOpen && (
+                  <div className="px-4 pb-3.5">
+                    <div className="rounded-lg overflow-hidden">
                       <iframe
                         src={embed.embedUrl}
                         width="100%"
@@ -289,13 +365,13 @@ export default function SharedPlaylist() {
                         title={s.title}
                       />
                     </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

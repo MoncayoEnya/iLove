@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { eventReminderCopy, streakRiskCopy, jarInactivityCopy } from '../utils/notificationCopy'
 import { todayStr } from '../utils/date'
+import { isLockedFor } from '../utils/privacy'
 
 const LOOKAHEAD_MS = 24 * 60 * 60 * 1000 // only schedule reminders due within the next 24h
 const REFRESH_MS = 5 * 60 * 1000 // re-check the window every 5 minutes
@@ -58,6 +59,7 @@ export function useLocalReminders() {
       snap.docs.forEach((d) => {
         const event = { id: d.id, ...d.data() }
         if (!event.reminderAt) return
+        if (isLockedFor(event, firebaseUser?.uid)) return
         activeIds.add(event.id)
         if (fired.current.has(event.id) || timers.current.has(event.id)) return
         if (timers.current.size >= MAX_TIMERS) return
@@ -77,6 +79,9 @@ export function useLocalReminders() {
           } catch {
             // Some browsers/contexts (e.g. iOS Safari) can throw here; fail silently.
           }
+          // Tell the server backstop (functions: sendReminderPush) this one's
+          // handled, so it doesn't also push it a few minutes from now.
+          updateDoc(doc(db, 'couples', coupleId, 'events', event.id), { reminderNotified: true }).catch(() => {})
         }, delay)
         timers.current.set(event.id, t)
       })

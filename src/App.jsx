@@ -1,11 +1,15 @@
+import { useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
 import ProtectedRoute from './components/ProtectedRoute'
+import IconRail from './components/IconRail'
 import Sidebar from './components/Sidebar'
+import Topbar from './components/Topbar'
 import BottomNav from './components/BottomNav'
 import FloatingActionButton from './components/FloatingActionButton'
 import PageTransition from './components/PageTransition'
+import ConnectionView from './components/ConnectionView'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -25,6 +29,7 @@ import SharedPlaces from './pages/SharedPlaces'
 import SharedPlaylist from './pages/SharedPlaylist'
 import SharedSavings from './pages/SharedSavings'
 import ConflictRecovery from './pages/ConflictRecovery'
+import FlappyBird from './pages/FlappyBird'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
 import { useLocalReminders } from './hooks/useLocalReminders'
@@ -37,14 +42,45 @@ function AppLayout({ children }) {
   usePushSubscription()
   const { pathname } = useLocation()
 
+  // The connection view (you & partner, side by side) is reachable from
+  // every page: tap the couple cluster / heart icon in the Topbar, or
+  // swipe left anywhere in the main content area. It renders as a
+  // full-screen overlay above whatever page is open, and closes back to
+  // that same page — it's a layer, not a route.
+  const [connectionOpen, setConnectionOpen] = useState(false)
+  const touchXRef = useRef(null)
+  const touchYRef = useRef(null)
+
+  function onContentTouchStart(e) {
+    touchXRef.current = e.touches[0].clientX
+    touchYRef.current = e.touches[0].clientY
+  }
+  function onContentTouchEnd(e) {
+    if (touchXRef.current == null) return
+    const dx = e.changedTouches[0].clientX - touchXRef.current
+    const dy = e.changedTouches[0].clientY - (touchYRef.current ?? 0)
+    touchXRef.current = null
+    touchYRef.current = null
+    if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) setConnectionOpen(true)
+  }
+
   return (
     <div className="flex flex-col lg:flex-row min-h-screen lg:h-screen lg:overflow-hidden">
+      <IconRail />
       <Sidebar />
-      <div className="flex-1 p-4 sm:p-6 lg:p-9 pb-24 lg:pb-9 max-w-full lg:max-w-[900px] xl:max-w-[1200px] overflow-y-auto">
-        <PageTransition>{children}</PageTransition>
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        <Topbar onOpenConnection={() => setConnectionOpen(true)} />
+        <div
+          className="flex-1 p-4 sm:p-6 lg:p-9 pb-24 lg:pb-9 max-w-full lg:max-w-[900px] xl:max-w-[1200px] overflow-y-auto"
+          onTouchStart={onContentTouchStart}
+          onTouchEnd={onContentTouchEnd}
+        >
+          <PageTransition>{children}</PageTransition>
+        </div>
       </div>
       {!pathname.startsWith('/chat') && <FloatingActionButton />}
       <BottomNav />
+      <ConnectionView open={connectionOpen} onClose={() => setConnectionOpen(false)} />
     </div>
   )
 }
@@ -231,6 +267,16 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <ConflictRecovery />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/play"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <FlappyBird />
             </AppLayout>
           </ProtectedRoute>
         }

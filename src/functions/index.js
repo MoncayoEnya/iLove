@@ -16,14 +16,18 @@
 // See src/hooks/useCompanion.js.
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { defineSecret } from 'firebase-functions/params'
 import { initializeApp } from 'firebase-admin/app'
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore'
+import webpush from 'web-push'
 
 initializeApp()
 const db = getFirestore()
 
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY')
+const VAPID_PUBLIC_KEY = defineSecret('VAPID_PUBLIC_KEY')
+const VAPID_PRIVATE_KEY = defineSecret('VAPID_PRIVATE_KEY')
 
 // One suggestion per couple per window — this is meant to read as a
 // once-in-a-while gentle nudge, not something to refresh-spam, and it
@@ -170,3 +174,110 @@ Write today's suggestion.`
   if (!text) throw new HttpsError('internal', 'Got an empty suggestion — try again.')
   return text
 }
+
+// ---------------------------------------------------------------------------
+// Calendar reminder push notifications
+// ---------------------------------------------------------------------------
+//
+// Runs every 5 minutes. Finds calendar events whose reminder is due and
+// haven't been pushed yet, and sends a real Web Push notification — this is
+// what makes reminders actually fire on a phone even with the app fully
+// closed. (The client-side src/hooks/useLocalReminders.js still fires an
+// instant in-tab notification when the app happens to be open; this
+// function is the backstop for when it isn't.)
+//
+// One-time setup:
+//   1. npx web-push generate-vapid-keys
+//   2. firebase functions:secrets:set VAPID_PUBLIC_KEY
+//      firebase functions:secrets:set VAPID_PRIVATE_KEY
+//   3. Put the same public key in your app's .env as VITE_VAPID_PUBLIC_KEY
+//      (src/hooks/usePushSubscription.js reads it from there)
+//   4. cd functions && npm install
+//   5. firebase deploy --only functions
+
+const REMINDER_LOOKBACK_MIN = 15 // catch anything due in the last 15 min (covers a missed run)
+const VAPID_SUBJECT = 'mailto:support@example.com' // replace with your real contact
+
+export const sendReminderPush = onSchedule(
+  { schedule: 'every 5 minutes', secrets: [VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY] },
+  async () => {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY.value(), VAPID_PRIVATE_KEY.value())
+
+    const now = Timestamp.now()
+    const since = Timestamp.fromMillis(now.toMillis() - REMINDER_LOOKBACK_MIN * 60 * 1000)
+
+    // collectionGroup query across every couple's `events` subcollection.
+    // Firestore will prompt you (via a link in the function logs) to create
+    // the composite index the first time this runs — click it once.
+    const dueSnap = await db
+      .collectionGroup('events')
+      .where('reminderAt', '>=', since)
+      .where('reminderAt', '<=', now)
+      .where('reminderNotified', '==', false)
+      .get()
+
+    if (dueSnap.empty) return
+
+    // Cache couple member lists and push subscriptions across events so we
+    // don't refetch the same couple/subscription repeatedly in one run.
+    const coupleMembersCache = new Map()
+    const subscriptionCache = new Map()
+
+    async function getMembers(coupleId) {
+      if (coupleMembersCache.has(coupleId)) return coupleMembersCache.get(coupleId)
+      const snap = await db.collection('couples').doc(coupleId).get()
+      const members = snap.data()?.members || []
+      coupleMembersCache.set(coupleId, members)
+      return members
+    }
+
+    async function getSubscription(uid) {
+      if (subscriptionCache.has(uid)) return subscriptionCache.get(uid)
+      const snap = await db.collection('pushSubscriptions').doc(uid).get()
+      const sub = snap.exists ? snap.data()?.subscription : null
+      subscriptionCache.set(uid, sub)
+      return sub
+    }
+
+    for (const eventDoc of dueSnap.docs) {
+      const event = eventDoc.data()
+      const coupleId = eventDoc.ref.parent.parent.id
+
+      // Respect the same privacy rule as the UI: a private reminder only
+      // ever reaches its owner, never the partner.
+      let recipients
+      if (event.private && event.ownerId) {
+        recipients = [event.ownerId]
+      } else {
+        recipients = await getMembers(coupleId)
+      }
+
+      const payload = JSON.stringify({
+        title: event.title || 'Reminder',
+        body: event.note ? event.note.slice(0, 120) : event.time ? `Today at ${event.time}` : "It's time",
+        tag: eventDoc.id,
+        url: '/calendar',
+      })
+
+      await Promise.all(
+        recipients.map(async (uid) => {
+          const sub = await getSubscription(uid)
+          if (!sub) return
+          try {
+            await webpush.sendNotification(sub, payload)
+          } catch (err) {
+            // 404/410 means the subscription is dead (browser data cleared,
+            // uninstalled, etc.) — clean it up so we stop trying.
+            if (err.statusCode === 404 || err.statusCode === 410) {
+              await db.collection('pushSubscriptions').doc(uid).delete().catch(() => {})
+            } else {
+              console.error(`Push failed for ${uid} on event ${eventDoc.id}:`, err.message)
+            }
+          }
+        })
+      )
+
+      await eventDoc.ref.set({ reminderNotified: true }, { merge: true })
+    }
+  }
+)

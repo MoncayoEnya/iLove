@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import dayjs from 'dayjs'
 import {
   addDoc,
   collection,
   deleteField,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -11,11 +13,15 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore'
+import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   FiBookmark,
   FiCamera,
+  FiCompass,
   FiCornerUpLeft,
+  FiHeart,
+  FiImage,
   FiMessageCircle,
   FiSearch,
   FiSmile,
@@ -27,6 +33,46 @@ import { useAuth } from '../context/AuthContext'
 import { usePartner } from '../hooks/usePartner'
 import { compressImage } from '../utils/compressImage'
 import EmptyState from '../components/EmptyState'
+
+// Small round avatar used in the conversation header/list — initials on a
+// gradient if there's no photo, same treatment as the rest of the app.
+function ChatAvatar({ name, photoURL, size = 40 }) {
+  return (
+    <div
+      className="rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-peach to-gold flex items-center justify-center text-plumdeep font-semibold"
+      style={{ width: size, height: size, fontSize: size * 0.4 }}
+    >
+      {photoURL ? (
+        <img src={photoURL} alt="" className="w-full h-full object-cover" />
+      ) : (
+        (name || '?')[0]?.toUpperCase()
+      )}
+    </div>
+  )
+}
+
+// This app only ever has one conversation — you and your partner — so the
+// left-hand list from a typical messenger doesn't have other people to
+// show. Instead it surfaces the other "together" spaces (Love jar, shared
+// memories, date ideas) as quick links, with a live preview where there's
+// real data to preview.
+function QuickLinkRow({ to, icon: Icon, tone, title, preview, time }) {
+  return (
+    <Link
+      to={to}
+      className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-black/[0.03] transition-colors"
+    >
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${tone}`}>
+        <Icon size={16} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold truncate">{title}</div>
+        <div className="text-xs text-[#9a8a9c] truncate">{preview}</div>
+      </div>
+      {time && <div className="text-[10px] text-[#a892a9] flex-shrink-0">{time}</div>}
+    </Link>
+  )
+}
 
 const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '👍', '🔥']
 const TYPING_TIMEOUT_MS = 2000
@@ -47,6 +93,8 @@ export default function Chat() {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [replyingTo, setReplyingTo] = useState(null)
   const [savingMemoryFor, setSavingMemoryFor] = useState(null)
+  const [latestJarNote, setLatestJarNote] = useState(null)
+  const [latestMemory, setLatestMemory] = useState(null)
 
   const bottomRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -64,6 +112,22 @@ export default function Chat() {
       setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     )
     return unsub
+  }, [coupleId])
+
+  // --- Quick-links previews: latest love-jar note, latest shared memory ---
+  useEffect(() => {
+    if (!coupleId) return
+    const unsubs = [
+      onSnapshot(
+        query(collection(db, 'couples', coupleId, 'jar'), orderBy('createdAt', 'desc'), limit(1)),
+        (snap) => setLatestJarNote(snap.docs[0] ? { id: snap.docs[0].id, ...snap.docs[0].data() } : null)
+      ),
+      onSnapshot(
+        query(collection(db, 'couples', coupleId, 'memories'), orderBy('createdAt', 'desc'), limit(1)),
+        (snap) => setLatestMemory(snap.docs[0] ? { id: snap.docs[0].id, ...snap.docs[0].data() } : null)
+      ),
+    ]
+    return () => unsubs.forEach((u) => u())
   }, [coupleId])
 
   // --- Auto scroll on new messages ---
@@ -254,59 +318,119 @@ export default function Chat() {
   const lastMine = [...messages].reverse().find((m) => m.from === firebaseUser.uid)
   const lastMineSeen = lastMine && partnerUid && (lastMine.readBy || []).includes(partnerUid)
 
+  function formatWhen(ts) {
+    if (!ts) return ''
+    const d = ts.toDate ? ts.toDate() : ts
+    return dayjs(d).format('MMM D')
+  }
+
   return (
-    <div>
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Chat</h1>
-          <p className="text-sm text-[#7a6a7c]">Just between you and {partner?.displayName || 'your partner'}.</p>
+    <div className="flex gap-4 h-[calc(100vh-260px)] lg:h-[calc(100vh-140px)]">
+      {/* Left panel — desktop only. There's just one conversation in this
+          app (you + your partner), so instead of a list of other people
+          this surfaces the couple's other shared spaces as quick links. */}
+      <div className="hidden lg:flex lg:w-[260px] flex-shrink-0 bg-white border border-black/10 rounded-2xl flex-col overflow-hidden">
+        <div className="px-4 pt-4 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">
+          Conversation
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setFavoritesOnly((v) => !v)}
-            aria-pressed={favoritesOnly}
-            title="Show favorites only"
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-sm font-semibold whitespace-nowrap ${
-              favoritesOnly ? 'border-peach bg-peachsoft text-plumdeep' : 'border-black/10'
-            }`}
-          >
-            <FiStar size={14} fill={favoritesOnly ? 'currentColor' : 'none'} />
-            Favorites
-          </button>
-          <button
-            onClick={() => {
-              setSearchOpen((v) => !v)
-              if (searchOpen) setSearchTerm('')
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-black/10 text-sm font-semibold whitespace-nowrap"
-          >
-            {searchOpen ? 'Close search' : (
-              <>
-                <FiSearch size={14} /> Search
-              </>
-            )}
-          </button>
+        <div className="px-2">
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-peach/10">
+            <ChatAvatar name={partner?.displayName} photoURL={partner?.photoURL} size={38} />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-peach truncate">{partner?.displayName || 'Your partner'}</div>
+              <div className="text-xs text-[#9a8a9c] truncate">
+                {partnerTyping ? 'Typing…' : lastMine ? (lastMine.type === 'image' ? '📷 Photo' : lastMine.text) : 'Say hi.'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-4 pt-5 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c]">
+          Together
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-0.5">
+          <QuickLinkRow
+            to="/memories?tab=jar"
+            icon={FiHeart}
+            tone="bg-blush text-peach"
+            title="Love jar"
+            preview={latestJarNote ? `"${latestJarNote.text}"` : 'No notes saved yet'}
+            time={latestJarNote ? formatWhen(latestJarNote.createdAt) : ''}
+          />
+          <QuickLinkRow
+            to="/memories"
+            icon={FiImage}
+            tone="bg-[#dff2f3] text-[#1c6e7a]"
+            title="Shared memories"
+            preview={latestMemory ? latestMemory.caption || 'Shared a photo' : 'No memories yet'}
+            time={latestMemory ? formatWhen(latestMemory.createdAt) : ''}
+          />
+          <QuickLinkRow
+            to="/date-ideas"
+            icon={FiCompass}
+            tone="bg-[#f7cddb] text-[#c2447a]"
+            title="Date ideas"
+            preview="Plan something together"
+          />
         </div>
       </div>
 
-      {searchOpen && (
-        <div className="mb-3">
-          <input
-            autoFocus
-            className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-            placeholder="Search messages..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          {searchTerm.trim() && (
-            <div className="text-xs text-[#9a8a9c] mt-1.5">
-              {visibleMessages.length} result{visibleMessages.length === 1 ? '' : 's'}
+      {/* Right panel — the actual conversation */}
+      <div className="flex-1 min-w-0 bg-white border border-black/10 rounded-2xl flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-black/10">
+          <div className="flex items-center gap-3 min-w-0">
+            <ChatAvatar name={partner?.displayName} photoURL={partner?.photoURL} />
+            <div className="min-w-0">
+              <div className="font-semibold truncate">{partner?.displayName || 'Your partner'}</div>
+              <div className="text-xs text-[#9a8a9c] truncate">
+                {partnerTyping ? 'Typing…' : `Just between you and ${partner?.displayName || 'your partner'}.`}
+              </div>
             </div>
-          )}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => setFavoritesOnly((v) => !v)}
+              aria-pressed={favoritesOnly}
+              title="Show favorites only"
+              className={`w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+                favoritesOnly ? 'border-peach text-peach bg-peachsoft' : 'border-black/10 text-[#7a6a7c]'
+              }`}
+            >
+              <FiStar size={16} fill={favoritesOnly ? 'currentColor' : 'none'} />
+            </button>
+            <button
+              onClick={() => {
+                setSearchOpen((v) => !v)
+                if (searchOpen) setSearchTerm('')
+              }}
+              aria-pressed={searchOpen}
+              title="Search messages"
+              className={`w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+                searchOpen ? 'border-peach text-peach bg-peachsoft' : 'border-black/10 text-[#7a6a7c]'
+              }`}
+            >
+              {searchOpen ? <FiX size={16} /> : <FiSearch size={16} />}
+            </button>
+          </div>
         </div>
-      )}
 
-      <div className="bg-white border border-black/10 rounded-2xl flex flex-col h-[calc(100vh-260px)] overflow-hidden">
+        {searchOpen && (
+          <div className="px-4 sm:px-5 pt-3">
+            <input
+              autoFocus
+              className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+              placeholder="Search messages..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm.trim() && (
+              <div className="text-xs text-[#9a8a9c] mt-1.5">
+                {visibleMessages.length} result{visibleMessages.length === 1 ? '' : 's'}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-2.5">
           {visibleMessages.length === 0 && (
             searchTerm.trim() ? (

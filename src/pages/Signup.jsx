@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { ClipLoader } from 'react-spinners'
 import { useAuth } from '../context/AuthContext'
-import AuthCard from '../components/AuthCard'
+import AuthSplitLayout from '../components/AuthSplitLayout'
 import { signupSchema, zodResolver } from '../lib/schemas'
 
 export default function Signup() {
@@ -28,7 +28,7 @@ export default function Signup() {
   }
 
   return (
-    <AuthCard>
+    <AuthSplitLayout headline="Begin with a little more understanding.">
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <label className="block text-xs text-[#6b5a6d] mt-3.5 mb-1.5 font-semibold">
           Your name
@@ -82,6 +82,6 @@ export default function Signup() {
           Log in
         </Link>
       </div>
-    </AuthCard>
+    </AuthSplitLayout>
   )
 }

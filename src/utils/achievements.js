@@ -10,6 +10,7 @@
 export const ACHIEVEMENTS = [
   {
     id: 'first-note',
+    category: 'shared',
     title: 'First Love Note',
     description: 'Leave your first note in the Love Jar.',
     check: (s) => s.jarCount >= 1,
@@ -17,6 +18,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'streak-3',
+    category: 'daily',
     title: "Three's a Streak",
     description: 'Check in together 3 days in a row.',
     check: (s) => s.streak >= 3,
@@ -24,6 +26,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'streak-7',
+    category: 'daily',
     title: 'One Week Strong',
     description: 'Hit a 7 day check-in streak.',
     check: (s) => s.streak >= 7,
@@ -31,6 +34,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'streak-30',
+    category: 'daily',
     title: '30 Days of Us',
     description: 'Hit a 30 day check-in streak.',
     check: (s) => s.streak >= 30,
@@ -38,6 +42,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'streak-100',
+    category: 'daily',
     title: 'Century Streak',
     description: 'Hit a 100 day check-in streak.',
     check: (s) => s.streak >= 100,
@@ -45,6 +50,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'jar-25',
+    category: 'shared',
     title: 'Jar Full of Love',
     description: 'Collect 25 notes in the Love Jar.',
     check: (s) => s.jarCount >= 25,
@@ -52,6 +58,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'jar-100',
+    category: 'shared',
     title: 'Overflowing',
     description: 'Collect 100 notes in the Love Jar.',
     check: (s) => s.jarCount >= 100,
@@ -59,6 +66,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'chat-50',
+    category: 'shared',
     title: 'Chatterbox',
     description: 'Send 50 messages to each other.',
     check: (s) => s.messageCount >= 50,
@@ -66,6 +74,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'chat-500',
+    category: 'shared',
     title: 'Never Runs Out of Words',
     description: 'Send 500 messages to each other.',
     check: (s) => s.messageCount >= 500,
@@ -73,6 +82,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'memories-10',
+    category: 'growing',
     title: 'Memory Keeper',
     description: 'Add 10 entries to your Memory Timeline.',
     check: (s) => s.memoriesCount >= 10,
@@ -80,6 +90,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'memories-50',
+    category: 'growing',
     title: 'Living Scrapbook',
     description: 'Add 50 entries to your Memory Timeline.',
     check: (s) => s.memoriesCount >= 50,
@@ -87,6 +98,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'tasks-25',
+    category: 'growing',
     title: 'Team Player',
     description: 'Complete 25 shared tasks together.',
     check: (s) => s.tasksDoneCount >= 25,
@@ -94,6 +106,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'journal-10',
+    category: 'growing',
     title: 'Open Book',
     description: 'Write 10 journal entries.',
     check: (s) => s.journalCount >= 10,
@@ -101,6 +114,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'bucket-5',
+    category: 'growing',
     title: 'Bucket List Crusher',
     description: 'Check 5 items off your bucket list.',
     check: (s) => s.bucketDoneCount >= 5,
@@ -108,6 +122,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'checkins-30',
+    category: 'daily',
     title: 'Daily Ritual',
     description: 'Log 30 check-ins total.',
     check: (s) => s.checkinsCount >= 30,
@@ -115,6 +130,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'playlist-1',
+    category: 'shared',
     title: 'Our First Song',
     description: 'Add your first song to the Shared Playlist.',
     check: (s) => s.playlistCount >= 1,
@@ -122,6 +138,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'playlist-20',
+    category: 'shared',
     title: 'Mixtape Makers',
     description: 'Build a playlist of 20 songs together.',
     check: (s) => s.playlistCount >= 20,

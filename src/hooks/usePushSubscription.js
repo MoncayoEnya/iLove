@@ -13,11 +13,12 @@ function urlBase64ToUint8Array(base64String) {
   return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)))
 }
 
-// Registers the service worker (public/sw.js) and subscribes this browser
-// to push, then stores the subscription in Firestore so the scheduled job
-// (scripts/send-jar-nudges.js) knows where to send notifications for this
-// user's couple. Call this once near the top of App.jsx, e.g. right next to
-// useLocalReminders().
+// Registers the service worker (public/sw.js — copy it from public-sw/sw.js
+// in this delivery) and subscribes this browser to push, then stores the
+// subscription in Firestore so the sendReminderPush scheduled Cloud
+// Function (functions/index.js) knows where to send calendar-reminder
+// notifications for this user. Call this once near the top of App.jsx,
+// e.g. right next to useLocalReminders() — it already is.
 export function usePushSubscription() {
   const { firebaseUser, couple } = useAuth()
 
