@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 import { PinLockProvider } from './context/PinLockContext.jsx'
 import './index.css'
+import './styles/lively.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

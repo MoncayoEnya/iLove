@@ -1,0 +1,395 @@
+/* =====================================================================
+   "Lively" interaction layer
+   ---------------------------------------------------------------------
+   Makes buttons, cards, list rows, images and inputs across every page
+   respond to the person: hover lift, cursor spotlight, gentle 3D tilt on
+   clickable cards, press-squish + ripple on tap, and staggered fade-in as
+   cards scroll into view.
+
+   It works without editing each page: src/hooks/useLivelyUI.js scans the
+   DOM and tags cards/rows with data-lv-* attributes, and this file styles
+   those tags plus plain buttons/links/inputs.
+
+   Uses the individual `translate` / `scale` / `rotate` CSS properties
+   (not `transform`) wherever possible, so these effects stack on top of
+   Tailwind's rotate and scale classes and framer-motion's inline
+   transforms instead of overwriting them.
+
+   Everything is switched off for people who ask their OS for reduced
+   motion (bottom of file).
+   ===================================================================== */
+
+@property --lv-r {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+:root {
+  --lv-accent: 232, 168, 124; /* peach, as r,g,b */
+  --lv-plum: 61, 35, 64;
+  --lv-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --lv-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+html:not(.dark)[data-palette='sakura'] { --lv-accent: 232, 139, 163; }
+html:not(.dark)[data-palette='ocean'] { --lv-accent: 61, 143, 166; }
+
+/* ---------------------------------------------------------------------
+   Buttons & button-shaped links
+   ------------------------------------------------------------------- */
+:is(button, a[class*='rounded'], [role='button'], [class*='cursor-pointer']):not(:disabled) {
+  transition:
+    translate 0.25s var(--lv-spring),
+    scale 0.18s var(--lv-spring),
+    box-shadow 0.25s var(--lv-ease),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    opacity 0.2s ease,
+    filter 0.2s ease;
+}
+
+@media (hover: hover) {
+  :is(button, a[class*='rounded'], [role='button'])[class*='rounded']:not(:disabled):not([data-lv-card]):hover {
+    translate: 0 -2px;
+  }
+
+  /* Bordered / outline buttons: warm the border and lift a soft shadow. */
+  :is(button, a)[class*='border'][class*='rounded']:not(:disabled):not([data-lv-card]):hover {
+    border-color: rgba(var(--lv-accent), 0.55);
+    box-shadow: 0 6px 16px -8px rgba(var(--lv-accent), 0.55);
+  }
+
+  /* Primary gradient / solid accent buttons: glow. */
+  :is(button, a)[class*='from-peach']:not(:disabled):hover,
+  :is(button, a)[class*='bg-peach ']:not(:disabled):hover,
+  :is(button, a)[class$='bg-peach']:not(:disabled):hover,
+  :is(button, a)[class*='bg-plumdeep']:not(:disabled):not([data-lv-card]):hover {
+    box-shadow:
+      0 10px 24px -10px rgba(var(--lv-accent), 0.85),
+      0 2px 6px -2px rgba(var(--lv-plum), 0.15);
+    filter: saturate(1.08) brightness(1.03);
+  }
+
+  /* Icons inside buttons get a small playful nudge. */
+  :is(button, a):not(:disabled) svg {
+    transition: scale 0.3s var(--lv-spring), rotate 0.3s var(--lv-spring), translate 0.3s var(--lv-spring);
+  }
+  :is(button, a):not(:disabled):hover > svg,
+  :is(button, a):not(:disabled):hover > div > svg {
+    scale: 1.14;
+    rotate: -8deg;
+  }
+  /* Arrows slide forward instead of tilting. */
+  :is(button, a):not(:disabled):hover svg.lv-arrow,
+  a:hover > svg:last-child:not(:first-child) {
+    rotate: 0deg;
+    scale: 1;
+    translate: 3px 0;
+  }
+
+  /* Sidebar links slide right a touch. */
+  nav a:hover {
+    translate: 3px 0 !important;
+  }
+  nav a:hover svg {
+    scale: 1.15;
+    rotate: -6deg;
+  }
+}
+
+/* Press squish, works on touch too. */
+:is(button, a[class*='rounded'], [role='button'], [class*='cursor-pointer']):not(:disabled):active {
+  scale: 0.96;
+  translate: 0 0;
+  transition-duration: 0.08s;
+}
+
+/* Shine sweep across primary gradient buttons on hover. */
+:is(button, a)[class*='from-peach'][class*='to-gold'] {
+  background-size: 100% 100%;
+}
+:is(button, a)[class*='from-peach'][class*='to-gold']:not([class*='rounded-full'])::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    110deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 65%
+  );
+  background-size: 250% 100%;
+  background-position: 130% 0;
+  opacity: 0;
+  transition: background-position 0.7s var(--lv-ease), opacity 0.2s ease;
+}
+@media (hover: hover) {
+  :is(button, a)[class*='from-peach'][class*='to-gold']:not(:disabled):hover::before {
+    opacity: 1;
+    background-position: -30% 0;
+  }
+}
+
+/* Elements the hook found to be position:static get made relative so the
+   ripple / shine pseudo-elements have something to anchor to. */
+[data-lv-rel] {
+  position: relative;
+}
+
+/* Tap ripple, anchored at the pointer (vars set by the hook). */
+[data-lv-ripple]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--lv-px, 50%) var(--lv-py, 50%),
+    color-mix(in srgb, currentColor 22%, transparent) 0,
+    color-mix(in srgb, currentColor 22%, transparent) var(--lv-r),
+    transparent calc(var(--lv-r) + 1px)
+  );
+  animation: lv-ripple 0.6s var(--lv-ease) forwards;
+}
+@keyframes lv-ripple {
+  from { --lv-r: 0px; opacity: 1; }
+  70% { opacity: 0.8; }
+  to { --lv-r: 420px; opacity: 0; }
+}
+
+/* ---------------------------------------------------------------------
+   Cards (data-lv-card="card") and list rows (data-lv-card="row")
+   ------------------------------------------------------------------- */
+[data-lv-card] {
+  transition:
+    translate 0.35s var(--lv-spring),
+    scale 0.2s var(--lv-spring),
+    box-shadow 0.35s var(--lv-ease),
+    border-color 0.3s ease,
+    transform 0.35s var(--lv-ease),
+    opacity 0.5s var(--lv-ease);
+}
+
+/* Cursor spotlight: a soft accent glow that follows the mouse. Painted as
+   an extra background layer so it needs no extra DOM or positioning. */
+[data-lv-glow] {
+  background-image: radial-gradient(
+    420px circle at var(--lv-x, -999px) var(--lv-y, -999px),
+    rgba(var(--lv-accent), 0.11),
+    transparent 45%
+  );
+}
+html.dark [data-lv-glow] {
+  background-image: radial-gradient(
+    420px circle at var(--lv-x, -999px) var(--lv-y, -999px),
+    rgba(255, 207, 158, 0.08),
+    transparent 45%
+  );
+}
+
+@media (hover: hover) {
+  [data-lv-card]:hover {
+    border-color: rgba(var(--lv-accent), 0.45);
+  }
+
+  /* Leaf cards (no card nested inside) without a form in them lift up.
+     Cards holding inputs stay put so typing isn't a moving target. */
+  [data-lv-card='card']:not(:has([data-lv-card='card'], input:not([type='checkbox']):not([type='radio']), textarea, select)):hover {
+    translate: 0 -4px;
+    box-shadow:
+      0 18px 36px -18px rgba(var(--lv-plum), 0.35),
+      0 0 0 1px rgba(var(--lv-accent), 0.18);
+  }
+  html.dark [data-lv-card='card']:not(:has([data-lv-card='card'], input:not([type='checkbox']):not([type='radio']), textarea, select)):hover {
+    box-shadow:
+      0 18px 36px -16px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(255, 207, 158, 0.18);
+  }
+
+  [data-lv-card='row']:not(:has(input:not([type='checkbox']):not([type='radio']), textarea, select)):hover {
+    translate: 0 -2px;
+    box-shadow: 0 10px 22px -14px rgba(var(--lv-plum), 0.35);
+  }
+
+  /* 3D tilt for clickable cards and photo cards. */
+  [data-lv-tilt]:hover {
+    transform: perspective(900px) rotateX(var(--lv-rx, 0deg)) rotateY(var(--lv-ry, 0deg));
+    transition:
+      translate 0.35s var(--lv-spring),
+      box-shadow 0.35s var(--lv-ease),
+      border-color 0.3s ease,
+      transform 0.12s linear;
+  }
+
+  /* Icons sitting in a card do a little hop when the card is hovered. */
+  [data-lv-card]:hover > svg,
+  [data-lv-card]:hover > div:not(:has(div)) > svg:first-child,
+  [data-lv-card]:hover > div > div[class*='rounded-full'] > svg:only-child,
+  [data-lv-card]:hover > :is(button, div) > div[class*='rounded-full'] > svg:only-child {
+    animation: lv-hop 0.6s var(--lv-spring);
+  }
+
+  /* Photos zoom gently inside their frame. */
+  [data-lv-zoom] {
+    transition: scale 0.6s var(--lv-ease), filter 0.4s ease;
+  }
+  [data-lv-card]:hover [data-lv-zoom],
+  :hover > [data-lv-zoom] {
+    scale: 1.06;
+    filter: saturate(1.1);
+  }
+
+  /* Free-standing photos in grids pop forward on hover. */
+  [data-lv-photo] {
+    transition: scale 0.35s var(--lv-spring), box-shadow 0.35s var(--lv-ease), filter 0.3s ease;
+  }
+  [data-lv-photo]:hover {
+    scale: 1.05;
+    filter: saturate(1.1);
+    box-shadow: 0 14px 28px -14px rgba(var(--lv-plum), 0.5);
+    position: relative;
+    z-index: 1;
+  }
+}
+
+[data-lv-card][data-lv-tilt]:active {
+  scale: 0.985;
+}
+
+/* Never transform something that contains a fixed overlay (a modal rendered
+   inline) — a transform would trap the overlay inside the card. */
+[data-lv-card]:has(.fixed),
+[data-lv-card]:has(.fixed):hover {
+  translate: none !important;
+  transform: none !important;
+}
+
+@keyframes lv-hop {
+  0% { translate: 0 0; rotate: 0deg; }
+  35% { translate: 0 -4px; rotate: -10deg; }
+  65% { translate: 0 1px; rotate: 6deg; }
+  100% { translate: 0 0; rotate: 0deg; }
+}
+
+/* ---------------------------------------------------------------------
+   Scroll reveal: cards fade + rise in, staggered (delay set by hook).
+   ------------------------------------------------------------------- */
+[data-lv-reveal='0'] {
+  opacity: 0;
+  translate: 0 18px;
+  scale: 0.985;
+}
+[data-lv-reveal='1'] {
+  animation: lv-reveal 0.6s var(--lv-ease) both;
+  animation-delay: var(--lv-delay, 0ms);
+}
+@keyframes lv-reveal {
+  from { opacity: 0; translate: 0 18px; scale: 0.985; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+/* ---------------------------------------------------------------------
+   Inputs: soft accent glow on focus.
+   ------------------------------------------------------------------- */
+:is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), textarea, select) {
+  transition: border-color 0.2s ease, box-shadow 0.25s var(--lv-ease), background-color 0.2s ease;
+}
+:is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), textarea, select):focus {
+  border-color: rgba(var(--lv-accent), 0.8);
+  box-shadow: 0 0 0 4px rgba(var(--lv-accent), 0.16);
+  outline: none;
+}
+
+/* Checkboxes pop when ticked. */
+input[type='checkbox'] {
+  transition: scale 0.2s var(--lv-spring);
+}
+input[type='checkbox']:checked {
+  animation: lv-pop 0.35s var(--lv-spring);
+}
+@keyframes lv-pop {
+  0% { scale: 1; }
+  45% { scale: 1.3; }
+  100% { scale: 1; }
+}
+
+/* ---------------------------------------------------------------------
+   Small extras used by specific components
+   ------------------------------------------------------------------- */
+
+/* Logo heart: a slow double "lub-dub" beat every few seconds. */
+.lv-heartbeat svg {
+  animation: lv-heartbeat 2.6s ease-in-out infinite;
+  transform-origin: center;
+}
+@keyframes lv-heartbeat {
+  0%, 60%, 100% { scale: 1; }
+  10% { scale: 1.22; }
+  20% { scale: 1; }
+  30% { scale: 1.14; }
+  40% { scale: 1; }
+}
+
+/* Soft pulsing halo (floating action button). */
+.lv-pulse-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  z-index: -1;
+  animation: lv-pulse 2.4s ease-out infinite;
+}
+@keyframes lv-pulse {
+  0% { scale: 1; opacity: 0.55; }
+  80%, 100% { scale: 1.6; opacity: 0; }
+}
+
+/* Gentle float for hero art / illustrations. */
+.lv-float {
+  animation: lv-float 6s ease-in-out infinite;
+}
+@keyframes lv-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -10px; }
+}
+
+/* ---------------------------------------------------------------------
+   Respect reduced-motion preferences: keep colors/glows, drop movement.
+   ------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  [data-lv-reveal='0'] {
+    opacity: 1;
+    translate: none;
+    scale: none;
+  }
+  [data-lv-card]:hover,
+  [data-lv-tilt]:hover,
+  button:hover,
+  a:hover {
+    translate: none !important;
+    transform: none !important;
+  }
+}
+
+/* Streak flame flickers like a real flame. */
+.lv-flicker {
+  transform-origin: 50% 90%;
+  animation: lv-flicker 1.8s ease-in-out infinite;
+}
+@keyframes lv-flicker {
+  0%, 100% { scale: 1 1; rotate: 0deg; }
+  25% { scale: 0.96 1.06; rotate: -3deg; }
+  50% { scale: 1.03 0.97; rotate: 2deg; }
+  75% { scale: 0.98 1.04; rotate: -1deg; }
+}

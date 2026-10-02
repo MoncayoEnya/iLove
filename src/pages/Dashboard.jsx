@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import dayjs from 'dayjs'
+import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import {
   addDoc,
@@ -33,13 +34,43 @@ import { MOODS } from '../utils/moods'
 import { anniversaryInfo, ordinalSuffix, todayStr } from '../utils/date'
 import { computeRelationshipHealth } from '../utils/relationshipHealth'
 
+// Counts a number up from 0 when it first appears (or from the previous
+// value when it changes), so stats feel alive instead of just sitting there.
+function CountUp({ value, duration = 900 }) {
+  const [n, setN] = useState(0)
+  const fromRef = useRef(0)
+  useEffect(() => {
+    const target = Number(value) || 0
+    const from = fromRef.current
+    if (from === target) return undefined
+    const start = performance.now()
+    let raf = 0
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / duration)
+      const eased = 1 - Math.pow(1 - p, 3)
+      setN(Math.round(from + (target - from) * eased))
+      if (p < 1) raf = requestAnimationFrame(tick)
+      else fromRef.current = target
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [value, duration])
+  return <>{n}</>
+}
+
 // Circular progress ring for the relationship-health score. Pure SVG, no
 // deps — a stroked circle with a partial dasharray offset by score.
 function HealthRing({ score, size = 96 }) {
   const stroke = 8
   const r = (size - stroke) / 2
   const c = 2 * Math.PI * r
-  const offset = c - (Math.min(100, Math.max(0, score)) / 100) * c
+  // Start empty and sweep to the real score right after mount.
+  const [shown, setShown] = useState(0)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(score))
+    return () => cancelAnimationFrame(id)
+  }, [score])
+  const offset = c - (Math.min(100, Math.max(0, shown)) / 100) * c
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 flex-shrink-0">
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(61,35,64,0.1)" strokeWidth={stroke} />
@@ -53,7 +84,7 @@ function HealthRing({ score, size = 96 }) {
         strokeLinecap="round"
         strokeDasharray={c}
         strokeDashoffset={offset}
-        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+        style={{ transition: 'stroke-dashoffset 1.4s cubic-bezier(0.22, 1, 0.36, 1)' }}
       />
       <defs>
         <linearGradient id="healthRingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -334,7 +365,7 @@ export default function Dashboard() {
               >
                 <HealthRing score={health.score} />
                 <div className="absolute inset-0 flex items-center justify-center text-2xl font-bold">
-                  {health.score}%
+                  <CountUp value={health.score} />%
                 </div>
               </button>
               <div className="text-center sm:text-left flex-1">
@@ -369,9 +400,9 @@ export default function Dashboard() {
 
             <div className="bg-white border border-black/10 rounded-2xl p-5">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] mb-3">Streak</div>
-              <FaFire size={22} className="text-peach" />
+              <FaFire size={22} className="text-peach lv-flicker" />
               <div className="text-2xl font-semibold mt-2">
-                {couple?.streak || 0} Day{couple?.streak === 1 ? '' : 's'}
+                <CountUp value={couple?.streak || 0} /> Day{couple?.streak === 1 ? '' : 's'}
               </div>
               <div className="text-xs text-[#9a8a9c] mt-1">Consistency builds closer tomorrows.</div>
             </div>
@@ -459,7 +490,7 @@ export default function Dashboard() {
                 <>
                   <FiCalendar size={20} className="text-peach" />
                   <div className="text-2xl font-semibold mt-2">
-                    {anniversary.daysUntil} <span className="text-sm font-medium">days</span>
+                    <CountUp value={anniversary.daysUntil} /> <span className="text-sm font-medium">days</span>
                   </div>
                   <div className="text-xs text-[#9a8a9c] mt-1">
                     Until your {anniversary.years}
@@ -494,11 +525,15 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="flex items-end justify-between gap-2 h-24">
-                {weekBars.map((b) => (
+                {weekBars.map((b, i) => (
                   <div key={b.date} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-                    <div
-                      className={`w-full rounded-full ${moodBarClasses(b.avg)}`}
+                    <motion.div
+                      className={`w-full rounded-full origin-bottom ${moodBarClasses(b.avg)}`}
                       style={{ height: `${b.avg == null ? 6 : Math.max(10, (b.avg / 5) * 100)}%` }}
+                      initial={{ scaleY: 0 }}
+                      animate={{ scaleY: 1 }}
+                      transition={{ delay: 0.25 + i * 0.06, type: 'spring', stiffness: 220, damping: 18 }}
+                      whileHover={{ scaleX: 1.15 }}
                     />
                     <span className="text-[10px] text-[#9a8a9c]">{b.label}</span>
                   </div>
