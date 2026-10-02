@@ -5,6 +5,7 @@ import {
   FiCompass,
   FiDollarSign,
   FiFeather,
+  FiGift,
   FiHome,
   FiImage,
   FiList,
@@ -44,6 +45,7 @@ export const navGroups = [
       { to: '/goals', icon: FiTarget, label: 'Goals' },
       { to: '/bucket-list', icon: FiList, label: 'Bucket list' },
       { to: '/achievements', icon: FiAward, label: 'Achievements' },
+      { to: '/wrapped', icon: FiGift, label: 'Our year, wrapped' },
     ],
   },
   {

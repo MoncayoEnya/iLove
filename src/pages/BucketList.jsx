@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
@@ -27,6 +26,8 @@ import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
 import EmptyState from '../components/EmptyState'
 import BottomSheet from '../components/BottomSheet'
+import { celebrate } from '../utils/celebrate'
+import { undoableDelete } from '../utils/undoDelete'
 
 const STAGES = [
   {
@@ -274,6 +275,7 @@ export default function BucketList() {
         await updateDoc(ref, { done: false, stage: 'planning', completedAt: null })
       } else {
         await updateDoc(ref, { done: true, stage: 'done', completedAt: serverTimestamp() })
+        celebrate({ kind: 'big' })
         toast.success(`"${item.text}" — checked off!`)
       }
     } catch (e) {
@@ -289,6 +291,7 @@ export default function BucketList() {
         done: newStage === 'done',
         completedAt: newStage === 'done' ? serverTimestamp() : null,
       })
+      if (newStage === 'done' && !item.done) celebrate({ kind: 'big' })
     } catch (e) {
       toast.error("Couldn't move that — try again.")
     }
@@ -297,7 +300,7 @@ export default function BucketList() {
   async function remove(item) {
     setMenuOpenId(null)
     try {
-      await deleteDoc(doc(db, 'couples', coupleId, 'bucketList', item.id))
+      await undoableDelete(doc(db, 'couples', coupleId, 'bucketList', item.id), item, 'Removed from bucket list')
     } catch (e) {
       toast.error("Couldn't remove that — try again.")
     }

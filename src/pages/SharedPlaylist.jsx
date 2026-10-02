@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore'
+import { addDoc, collection, doc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 import {
   FiExternalLink,
@@ -18,6 +18,7 @@ import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
 import EmptyState from '../components/EmptyState'
+import { undoableDelete } from '../utils/undoDelete'
 
 // No Spotify/YouTube OAuth or API key here on purpose — this is the "80% of
 // the emotional value, none of the integration cost" version from the
@@ -127,7 +128,7 @@ export default function SharedPlaylist() {
 
   async function removeSong(song) {
     try {
-      await deleteDoc(doc(db, 'couples', coupleId, 'playlist', song.id))
+      await undoableDelete(doc(db, 'couples', coupleId, 'playlist', song.id), song, 'Song removed')
     } catch (e) {
       toast.error("Couldn't remove that — try again.")
     } finally {

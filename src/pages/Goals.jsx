@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
 import EmptyState from '../components/EmptyState'
 import BottomSheet from '../components/BottomSheet'
+import { celebrate } from '../utils/celebrate'
 
 const STAGES = [
   ['now', 'Now'],
@@ -208,7 +209,10 @@ export default function Goals() {
         progress: clamped,
         done: clamped === 100,
       })
-      if (clamped === 100 && !goal.done) toast.success(`"${goal.title}" — goal complete!`)
+      if (clamped === 100 && !goal.done) {
+        celebrate({ kind: 'big' })
+        toast.success(`"${goal.title}" — goal complete!`)
+      }
     } catch (e) {
       toast.error("Couldn't update progress — try again.")
     }

@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
 import EmptyState from '../components/EmptyState'
 import BottomSheet from '../components/BottomSheet'
+import ReactionBar from '../components/ReactionBar'
 
 export const JAR_CATEGORIES = [
   { value: 'appreciation', label: 'Appreciation', icon: FiHeart },
@@ -228,7 +229,7 @@ export default function LoveJar({ embedded = false }) {
             </div>
           ) : filteredNotes.length === 0 ? (
             <div className="bg-white border border-black/10 rounded-2xl p-5">
-              <EmptyState icon={FiSearch} title="No notes match" subtitle="Try a different search term or category filter." />
+              <EmptyState delay={0} icon={FiSearch} title="No notes match" subtitle="Try a different search term or category filter." />
             </div>
           ) : (
             <div className="columns-1 sm:columns-2 gap-4 [column-fill:_balance]">
@@ -241,8 +242,16 @@ export default function LoveJar({ embedded = false }) {
                     style={{ backgroundColor: color.bg, borderColor: color.border }}
                   >
                     <p className="font-serif italic text-[15px] leading-snug text-plumdeep">"{n.text}"</p>
-                    <div className="text-right mt-3 text-sm font-serif italic text-[#7a6a7c]">
-                      — {names[n.from] || '...'}
+                    <div className="flex items-center justify-between gap-2 mt-3">
+                      <ReactionBar
+                        path={['couples', couple.id, 'jar', n.id]}
+                        reactions={n.reactions}
+                        uid={firebaseUser.uid}
+                        names={names}
+                      />
+                      <div className="text-sm font-serif italic text-[#7a6a7c] flex-shrink-0">
+                        — {names[n.from] || '...'}
+                      </div>
                     </div>
                   </div>
                 )

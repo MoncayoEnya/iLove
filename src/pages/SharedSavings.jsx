@@ -1,451 +1,932 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
+  arrayRemove,
   arrayUnion,
   collection,
   deleteDoc,
   doc,
-  increment,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'
+import dayjs from 'dayjs'
 import toast from 'react-hot-toast'
-import { FiPlus, FiTarget, FiTrash2, FiX } from 'react-icons/fi'
+import { ClipLoader } from 'react-spinners'
+import {
+  FiCalendar,
+  FiCamera,
+  FiCompass,
+  FiGift,
+  FiGrid,
+  FiHeart,
+  FiImage,
+  FiList,
+  FiMusic,
+  FiPlus,
+  FiStar,
+  FiTag,
+  FiX,
+} from 'react-icons/fi'
+import { FaFire } from 'react-icons/fa'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
+import { compressImage } from '../utils/compressImage'
+import { friendlyDate, todayStr } from '../utils/date'
+import CropModal from '../components/CropModal'
 import EmptyState from '../components/EmptyState'
+import { undoableDelete } from '../utils/undoDelete'
+import ReactionBar from '../components/ReactionBar'
+import { ReactionIcon } from '../utils/reactions'
 
-// This is a *tracker*, not a payments feature — there is no bank/account
-// integration. Amounts are just numbers either partner logs by hand, so the
-// UI below is careful to read as "keeping score of what we've put aside"
-// rather than anything that moves real money.
+// Milestone types a person can log by hand. "Streak" milestones are instead
+// generated automatically below, never added manually here.
+const MILESTONE_TYPES = [
+  { key: 'first_date', label: 'First date', icon: FiStar, color: '#d9a06a' },
+  { key: 'anniversary', label: 'Anniversary', icon: FiHeart, color: '#d97a6a' },
+  { key: 'birthday', label: 'Birthday', icon: FiGift, color: '#e8b978' },
+  { key: 'vacation', label: 'Trip / vacation', icon: FiCompass, color: '#7a9c8a' },
+  { key: 'song', label: 'Favorite song', icon: FiMusic, color: '#a892a9' },
+  { key: 'other', label: 'Other milestone', icon: FiStar, color: '#9a8a9c' },
+]
+const STREAK_MILESTONE = { key: 'streak', label: 'Streak', icon: FaFire, color: '#e07a52' }
+const STREAK_THRESHOLDS = [7, 30, 50, 100, 200, 365, 500, 750, 1000]
 
-function formatMoney(n) {
-  return (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })
+function milestoneMeta(milestoneType) {
+  if (milestoneType === 'streak') return STREAK_MILESTONE
+  return MILESTONE_TYPES.find((m) => m.key === milestoneType) || MILESTONE_TYPES[MILESTONE_TYPES.length - 1]
 }
 
-function daysUntil(dateStr) {
-  if (!dateStr) return null
-  const diff = new Date(`${dateStr}T00:00:00`) - new Date(new Date().toDateString())
-  return Math.round(diff / 86400000)
-}
-
-// Circular progress ring, same gradient-stroke technique as the Dashboard's
-// relationship-health ring. gradientId must be unique per rendered ring
-// (a page can show several at once) — callers pass the goal's Firestore id.
-function GoalRing({ pct, size = 108, stroke = 9, gradientId }) {
-  const r = (size - stroke) / 2
-  const c = 2 * Math.PI * r
-  const clamped = Math.max(0, Math.min(100, pct))
-  const offset = c - (clamped / 100) * c
+// Shared photo tile used by the featured row, the "More memories" grid, and
+// the timeline's day-by-day grid. `size` only changes the image height and
+// caption scale — the interaction (open lightbox, toggle pin) is identical
+// everywhere, so keeping it in one place avoids the three call sites drifting.
+function MemoryPhotoCard({ entry, names, onOpen, onTogglePin, size = 'md' }) {
+  const heightClass = size === 'lg' ? 'h-60' : size === 'sm' ? 'h-32' : 'h-36'
+  const titleClass = size === 'lg' ? 'text-base' : 'text-[12.5px]'
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 flex-shrink-0">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(61,35,64,0.08)" strokeWidth={stroke} />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke={`url(#${gradientId})`}
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeDasharray={c}
-        strokeDashoffset={offset}
-        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
-      />
-      <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#e8a87c" />
-          <stop offset="100%" stopColor="#f0c987" />
-        </linearGradient>
-      </defs>
-    </svg>
-  )
-}
-
-// Ring + centered percentage, the piece reused by both the featured goal
-// and the compact grid (only the featured one also shows a "saved" caption).
-function RingStat({ pct, size, stroke, idSuffix, caption }) {
-  return (
-    <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-      <GoalRing pct={pct} size={size} stroke={stroke} gradientId={`savings-ring-${idSuffix}`} />
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={caption ? 'text-2xl font-bold text-ink' : 'text-base font-bold text-ink'}>{pct}%</span>
-        {caption && <span className="text-[10px] uppercase tracking-wide text-[#9a8a9c] mt-0.5">{caption}</span>}
-      </div>
+    <div className="relative rounded-2xl overflow-hidden border border-black/10">
+      <button onClick={onOpen} className="block w-full text-left">
+        <img
+          src={entry.photoData}
+          alt={entry.caption || ''}
+          className={`w-full ${heightClass} object-cover`}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-black/0" />
+        {entry.reactions && Object.values(entry.reactions).some(Boolean) && (
+          <div className="pointer-events-none absolute top-2 left-2 flex items-center gap-1 bg-white/90 rounded-full px-2 py-1 shadow-sm">
+            {[...new Set(Object.values(entry.reactions).filter(Boolean))].map((k) => (
+              <ReactionIcon key={k} k={k} size={11} />
+            ))}
+          </div>
+        )}
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 p-3 text-white">
+          <div className={`${titleClass} font-serif font-semibold truncate`}>{entry.caption || 'Untitled memory'}</div>
+          <div className="text-[10.5px] opacity-85 truncate">Added by {names[entry.from] || '...'}</div>
+        </div>
+      </button>
+      <button
+        onClick={onTogglePin}
+        aria-label={entry.pinned ? 'Remove from favorite memories' : 'Add to favorite memories'}
+        aria-pressed={!!entry.pinned}
+        title={entry.pinned ? 'Remove from favorite memories' : 'Add to favorite memories'}
+        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/85 flex items-center justify-center text-peach shadow-sm"
+      >
+        <FiHeart size={13} fill={entry.pinned ? 'currentColor' : 'none'} />
+      </button>
     </div>
   )
 }
 
-export default function SharedSavings() {
+// Firestore returns a Timestamp for createdAt on synced docs, or a plain JS
+// Date right after a local write before the round trip completes. This
+// normalizes either shape to 'YYYY-MM-DD' so entries can be grouped by day.
+function entryDateStr(entry) {
+  if (entry.date) return entry.date
+  const ts = entry.createdAt
+  if (!ts) return null
+  if (typeof ts.toDate === 'function') return dayjs(ts.toDate()).format('YYYY-MM-DD')
+  if (ts instanceof Date) return dayjs(ts).format('YYYY-MM-DD')
+  return null
+}
+
+export default function Memories({
+  embedded = false,
+  layout: layoutProp,
+  setLayout: setLayoutProp,
+  entryMode: entryModeProp,
+  setEntryMode: setEntryModeProp,
+  showAddModal: showAddModalProp,
+  setShowAddModal: setShowAddModalProp,
+}) {
   const { firebaseUser, couple } = useAuth()
-  const coupleId = couple?.id
   const names = useMemberNames(couple?.members)
 
-  const [goals, setGoals] = useState([])
-  const [showForm, setShowForm] = useState(false)
-  const [title, setTitle] = useState('')
-  const [targetAmount, setTargetAmount] = useState('')
-  const [deadline, setDeadline] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [memories, setMemories] = useState([])
+  const [loading, setLoading] = useState(true)
+  // These three all normally arrive as props from MemoriesHub, which hosts
+  // the "Add a photo" / "Log a milestone" / layout-toggle controls up in its
+  // tab row. The local fallbacks below only kick in if Memories is ever
+  // rendered standalone (embedded=false, no controlling parent).
+  const [localLayout, setLocalLayout] = useState('timeline')
+  const layout = layoutProp ?? localLayout
+  const setLayout = setLayoutProp ?? setLocalLayout
 
-  const [contribGoalId, setContribGoalId] = useState(null)
-  const [contribAmount, setContribAmount] = useState('')
-  const [contribNote, setContribNote] = useState('')
+  const [caption, setCaption] = useState('')
+  const [tagsInput, setTagsInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [activeTag, setActiveTag] = useState(null)
+  const [newTag, setNewTag] = useState('')
+  const [photoData, setPhotoData] = useState(null)
+  const [photoError, setPhotoError] = useState('')
+  const [photoLoading, setPhotoLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [lightbox, setLightbox] = useState(null)
+  const [cropSrc, setCropSrc] = useState(null)
+  const [localShowAddModal, setLocalShowAddModal] = useState(false)
+  const showAddModal = showAddModalProp ?? localShowAddModal
+  const setShowAddModal = setShowAddModalProp ?? setLocalShowAddModal
+  const [gridYear, setGridYear] = useState('all') // year filter for the grid view's "More memories" section
+  const fileInputRef = useRef(null)
+
+  // Add-entry form: photo (default, existing flow) or a hand-logged milestone.
+  const [localEntryMode, setLocalEntryMode] = useState('photo') // 'photo' | 'milestone'
+  const entryMode = entryModeProp ?? localEntryMode
+  const setEntryMode = setEntryModeProp ?? setLocalEntryMode
+  const [milestoneType, setMilestoneType] = useState('first_date')
+  const [milestoneTitle, setMilestoneTitle] = useState('')
+  const [milestoneDate, setMilestoneDate] = useState(todayStr())
+  const [milestoneSaving, setMilestoneSaving] = useState(false)
 
   useEffect(() => {
-    if (!coupleId) return
-    const q = query(collection(db, 'couples', coupleId, 'savingsGoals'), orderBy('createdAt', 'desc'))
-    const unsub = onSnapshot(q, (snap) => setGoals(snap.docs.map((d) => ({ id: d.id, ...d.data() }))))
+    if (!couple?.id) return
+    const unsub = onSnapshot(
+      query(collection(db, 'couples', couple.id, 'memories'), orderBy('createdAt', 'desc')),
+      (snap) => {
+        setMemories(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+        setLoading(false)
+      }
+    )
     return unsub
-  }, [coupleId])
+  }, [couple?.id])
 
-  async function addGoal() {
-    const t = title.trim()
-    const target = Number(targetAmount)
-    if (!t || !target || target <= 0 || !coupleId) return
+  // --- Auto-generate a streak milestone the first time the couple crosses
+  // each threshold. Self-contained: reads couple.streak (already tracked by
+  // the dashboard) and writes into this same memories collection, guarded
+  // against duplicates by checking what's already there.
+  useEffect(() => {
+    if (!couple?.id || loading) return
+    const streak = couple.streak || 0
+    const already = new Set(
+      memories.filter((m) => m.entryType === 'milestone' && m.milestoneType === 'streak').map((m) => m.streakValue)
+    )
+    const nextThreshold = [...STREAK_THRESHOLDS].reverse().find((t) => streak >= t && !already.has(t))
+    if (!nextThreshold) return
+    ;(async () => {
+      try {
+        await addDoc(collection(db, 'couples', couple.id, 'memories'), {
+          entryType: 'milestone',
+          milestoneType: 'streak',
+          streakValue: nextThreshold,
+          title: `${nextThreshold} Day Streak`,
+          date: todayStr(),
+          caption: '',
+          tags: [],
+          from: firebaseUser.uid,
+          auto: true,
+          createdAt: new Date(),
+        })
+      } catch (e) {
+        // Silent — this is a background nicety, not worth surfacing an error toast for.
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couple?.id, couple?.streak, loading, memories.length])
+
+  function handlePhotoPick(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Please choose an image file.')
+      return
+    }
+    setPhotoError('')
+    setCropSrc(URL.createObjectURL(file))
+  }
+
+  async function handleCropped(croppedFile) {
+    setCropSrc(null)
+    setPhotoLoading(true)
+    try {
+      setPhotoData(await compressImage(croppedFile, { maxWidth: 1200, maxHeight: 1200, maxBytes: 900_000 }))
+    } catch (err) {
+      setPhotoError(err.message)
+    } finally {
+      setPhotoLoading(false)
+    }
+  }
+
+  async function addMemory() {
+    if (!photoData) return
     setSaving(true)
     try {
-      await addDoc(collection(db, 'couples', coupleId, 'savingsGoals'), {
-        title: t,
-        targetAmount: target,
-        savedAmount: 0,
-        deadline: deadline || null,
-        contributions: [],
-        createdBy: firebaseUser.uid,
-        createdAt: serverTimestamp(),
+      const tags = [...new Set(tagsInput.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))]
+      await addDoc(collection(db, 'couples', couple.id, 'memories'), {
+        entryType: 'photo',
+        photoData,
+        caption: caption.trim(),
+        tags,
+        from: firebaseUser.uid,
+        createdAt: new Date(),
       })
-      setTitle('')
-      setTargetAmount('')
-      setDeadline('')
-      setShowForm(false)
+      setCaption('')
+      setTagsInput('')
+      setPhotoData(null)
+      setShowAddModal(false)
+      toast.success('Memory saved.')
     } catch (e) {
-      toast.error("Couldn't create that goal — try again.")
+      toast.error("Couldn't save that memory — try again.")
     } finally {
       setSaving(false)
     }
   }
 
-  async function removeGoal(goal) {
+  async function addMilestone() {
+    const title = milestoneTitle.trim()
+    if (!title || !milestoneDate) return
+    setMilestoneSaving(true)
     try {
-      await deleteDoc(doc(db, 'couples', coupleId, 'savingsGoals', goal.id))
-    } catch (e) {
-      toast.error("Couldn't remove that goal — try again.")
-    }
-  }
-
-  function openContribute(goal) {
-    setContribGoalId((cur) => (cur === goal.id ? null : goal.id))
-    setContribAmount('')
-    setContribNote('')
-  }
-
-  async function addContribution(goal) {
-    const amount = Number(contribAmount)
-    if (!amount || amount <= 0 || !coupleId) return
-    try {
-      await updateDoc(doc(db, 'couples', coupleId, 'savingsGoals', goal.id), {
-        savedAmount: increment(amount),
-        contributions: arrayUnion({
-          amount,
-          note: contribNote.trim(),
-          by: firebaseUser.uid,
-          date: new Date().toISOString().slice(0, 10),
-        }),
+      await addDoc(collection(db, 'couples', couple.id, 'memories'), {
+        entryType: 'milestone',
+        milestoneType,
+        title,
+        date: milestoneDate,
+        caption: '',
+        tags: [],
+        from: firebaseUser.uid,
+        auto: false,
+        createdAt: new Date(`${milestoneDate}T12:00:00`),
       })
-      const newTotal = (goal.savedAmount || 0) + amount
-      if (newTotal >= goal.targetAmount && (goal.savedAmount || 0) < goal.targetAmount) {
-        toast.success(`"${goal.title}" — fully funded! 🎉`)
-      } else {
-        toast.success('Contribution added')
-      }
-      setContribGoalId(null)
+      setMilestoneTitle('')
+      setMilestoneDate(todayStr())
+      setShowAddModal(false)
+      toast.success('Milestone added.')
     } catch (e) {
-      toast.error("Couldn't add that contribution — try again.")
+      toast.error("Couldn't save that milestone — try again.")
+    } finally {
+      setMilestoneSaving(false)
     }
   }
 
-  const activeGoals = useMemo(() => goals.filter((g) => (g.savedAmount || 0) < g.targetAmount), [goals])
-  const fundedGoals = useMemo(() => goals.filter((g) => (g.savedAmount || 0) >= g.targetAmount), [goals])
-  const [featured, ...rest] = activeGoals
-
-  function ContributeForm({ goal }) {
-    return (
-      <div className="border-t border-black/10 mt-4 pt-3.5">
-        <div className="flex flex-col sm:flex-row gap-2 mb-2">
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            autoFocus
-            className="flex-1 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-            placeholder="Amount"
-            value={contribAmount}
-            onChange={(e) => setContribAmount(e.target.value)}
-          />
-          <input
-            className="flex-1 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-            placeholder="Note (optional)"
-            value={contribNote}
-            onChange={(e) => setContribNote(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addContribution(goal)}
-          />
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => addContribution(goal)}
-            disabled={!contribAmount || Number(contribAmount) <= 0}
-            className="flex-1 sm:flex-none px-5 py-2 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
-          >
-            Add
-          </button>
-          <button
-            onClick={() => setContribGoalId(null)}
-            className="px-4 py-2 rounded-xl font-semibold text-sm border border-black/10"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    )
+  async function togglePinned(memory) {
+    try {
+      await updateDoc(doc(db, 'couples', couple.id, 'memories', memory.id), {
+        pinned: !memory.pinned,
+      })
+    } catch (e) {
+      toast.error("Couldn't update that — try again.")
+    }
   }
+
+  async function removeMemory(id) {
+    try {
+      const entry = memories.find((m) => m.id === id) || (lightbox?.id === id ? lightbox : null)
+      const ref = doc(db, 'couples', couple.id, 'memories', id)
+      setLightbox(null)
+      if (entry) await undoableDelete(ref, entry, 'Memory deleted')
+      else {
+        await deleteDoc(ref)
+        toast.success('Memory deleted.')
+      }
+    } catch (e) {
+      toast.error("Couldn't delete that memory — try again.")
+    }
+  }
+
+  async function addTagToLightbox() {
+    const tag = newTag.trim().toLowerCase()
+    if (!tag || !lightbox) return
+    setNewTag('')
+    try {
+      await updateDoc(doc(db, 'couples', couple.id, 'memories', lightbox.id), { tags: arrayUnion(tag) })
+      setLightbox((l) => (l ? { ...l, tags: [...new Set([...(l.tags || []), tag])] } : l))
+    } catch (e) {
+      toast.error("Couldn't add that tag — try again.")
+    }
+  }
+
+  async function removeTagFromLightbox(tag) {
+    try {
+      await updateDoc(doc(db, 'couples', couple.id, 'memories', lightbox.id), { tags: arrayRemove(tag) })
+      setLightbox((l) => (l ? { ...l, tags: (l.tags || []).filter((t) => t !== tag) } : l))
+    } catch (e) {
+      toast.error("Couldn't remove that tag — try again.")
+    }
+  }
+
+  const photoMemories = useMemo(() => memories.filter((m) => (m.entryType || 'photo') === 'photo'), [memories])
+  const allTags = [...new Set(photoMemories.flatMap((m) => m.tags || []))].sort()
+
+  const filteredMemories = photoMemories.filter((m) => {
+    if (activeTag && !(m.tags || []).includes(activeTag)) return false
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      const hay = `${m.caption || ''} ${(m.tags || []).join(' ')}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+
+  // Chronological feed mixing photos and milestones, grouped by day. Search
+  // and the active tag filter both apply here too (photo entries only —
+  // milestones don't carry captions/tags, so they always stay visible).
+  const timelineGroups = useMemo(() => {
+    const withDates = memories
+      .map((m) => ({ ...m, _dateStr: entryDateStr(m) }))
+      .filter((m) => m._dateStr)
+      .filter((m) => {
+        if ((m.entryType || 'photo') !== 'photo') return true
+        if (activeTag && !(m.tags || []).includes(activeTag)) return false
+        if (search.trim()) {
+          const q = search.trim().toLowerCase()
+          const hay = `${m.caption || ''} ${(m.tags || []).join(' ')}`.toLowerCase()
+          if (!hay.includes(q)) return false
+        }
+        return true
+      })
+    const map = {}
+    withDates.forEach((m) => {
+      if (!map[m._dateStr]) map[m._dateStr] = []
+      map[m._dateStr].push(m)
+    })
+    return Object.entries(map).sort((a, b) => (a[0] < b[0] ? 1 : -1))
+  }, [memories, activeTag, search])
+
+  // Grid view: a 3-up featured row (most recent) + the rest in a filterable
+  // "More memories" grid, with year pills built from whatever years actually
+  // have memories in them.
+  const featuredMemories = filteredMemories.slice(0, 3)
+  const restMemories = filteredMemories.slice(3)
+  const gridYears = useMemo(() => {
+    const years = new Set()
+    restMemories.forEach((m) => {
+      const d = entryDateStr(m)
+      if (d) years.add(dayjs(d).format('YYYY'))
+    })
+    return [...years].sort((a, b) => (a < b ? 1 : -1))
+  }, [restMemories])
+  const visibleRestMemories =
+    gridYear === 'all' ? restMemories : restMemories.filter((m) => dayjs(entryDateStr(m)).format('YYYY') === gridYear)
+
+  // Timeline view's sticky side index: everything grouped Year -> Month,
+  // newest first, mirroring the main feed so the two stay in sync.
+  const yearGroups = useMemo(() => {
+    const withDates = memories
+      .map((m) => ({ ...m, _dateStr: entryDateStr(m) }))
+      .filter((m) => m._dateStr)
+      .sort((a, b) => (a._dateStr < b._dateStr ? 1 : -1))
+    const byYear = new Map()
+    withDates.forEach((m) => {
+      const d = dayjs(m._dateStr)
+      const year = d.format('YYYY')
+      const month = d.format('MMMM')
+      if (!byYear.has(year)) byYear.set(year, { year, count: 0, monthsMap: new Map() })
+      const yearEntry = byYear.get(year)
+      yearEntry.count += 1
+      if (!yearEntry.monthsMap.has(month)) yearEntry.monthsMap.set(month, { month, monthIndex: d.month(), entries: [] })
+      yearEntry.monthsMap.get(month).entries.push(m)
+    })
+    return [...byYear.values()]
+      .sort((a, b) => (a.year < b.year ? 1 : -1))
+      .map((y) => ({ ...y, months: [...y.monthsMap.values()].sort((a, b) => b.monthIndex - a.monthIndex) }))
+  }, [memories])
 
   return (
     <div>
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Shared savings</h1>
-          <p className="text-sm text-[#7a6a7c]">
-            Track what you're putting aside together — a trip, a ring, a rainy day.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="py-2.5 px-4 rounded-full font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep flex items-center gap-1.5 flex-shrink-0 shadow-sm hover:shadow-md transition-shadow"
-        >
-          {showForm ? <FiX size={14} /> : <FiPlus size={14} />}
-          {showForm ? 'Cancel' : 'New goal'}
-        </button>
-      </div>
-
-      <div className="bg-blush/50 border border-black/10 rounded-xl px-4 py-3 mb-5 text-xs sm:text-sm text-[#6b5a6d]">
-        This is just a tracker for you two — no bank or card is connected. Log contributions by hand
-        whenever you set money aside.
-      </div>
-
-      {showForm && (
-        <div className="bg-white border border-black/10 rounded-2xl p-5 mb-5">
-          <h3 className="font-semibold mb-3">New savings goal</h3>
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs text-[#6b5a6d] mb-1.5 font-semibold">What are you saving for?</label>
-              <input
-                className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-                placeholder="e.g. Trip to Japan"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
+      {!embedded && (
+        <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] mb-1.5">
+              Photos, places, and a love story
             </div>
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="block text-xs text-[#6b5a6d] mb-1.5 font-semibold">Target amount</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-                  placeholder="2000"
-                  value={targetAmount}
-                  onChange={(e) => setTargetAmount(e.target.value)}
-                />
-              </div>
-              <div className="flex-1">
-                <label className="block text-xs text-[#6b5a6d] mb-1.5 font-semibold">Deadline (optional)</label>
-                <input
-                  type="date"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
-                />
-              </div>
+            <h1 className="font-serif text-3xl font-semibold mb-1 leading-tight">Memories</h1>
+            <p className="text-sm text-[#7a6a7c]">Same people. A brighter tomorrow.</p>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setEntryMode('photo')
+                  setShowAddModal(true)
+                }}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-xl border border-black/10 bg-white hover:bg-black/[0.02] transition-colors"
+              >
+                <FiImage size={13} /> Add a photo
+              </button>
+              <button
+                onClick={() => {
+                  setEntryMode('milestone')
+                  setShowAddModal(true)
+                }}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-xl bg-peach text-white hover:brightness-95 transition"
+              >
+                <FiPlus size={13} /> Log a milestone
+              </button>
             </div>
-            <button
-              onClick={addGoal}
-              disabled={saving || !title.trim() || !targetAmount}
-              className="w-full py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
-            >
-              {saving ? 'Creating...' : 'Create goal'}
-            </button>
+            <div className="hidden sm:block w-px h-6 bg-black/10" />
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setLayout('timeline')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  layout === 'timeline' ? 'bg-plum text-white' : 'bg-white border border-black/10 text-[#7a6a7c]'
+                }`}
+              >
+                <FiList size={13} /> Timeline
+              </button>
+              <button
+                onClick={() => setLayout('grid')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  layout === 'grid' ? 'bg-plum text-white' : 'bg-white border border-black/10 text-[#7a6a7c]'
+                }`}
+              >
+                <FiGrid size={13} /> Grid
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {goals.length === 0 && !showForm && (
-        <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <EmptyState
-            icon={FiTarget}
-            title="No savings goals yet"
-            subtitle="Start one for a trip, a gift, or anything you're working toward together."
-          />
+      <CropModal
+        imageSrc={cropSrc}
+        aspect={4 / 3}
+        onCancel={() => setCropSrc(null)}
+        onCropped={handleCropped}
+      />
+
+      {showAddModal && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center p-6 z-50"
+          onClick={() => setShowAddModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-5 max-w-lg w-full max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-1.5 bg-black/[0.03] rounded-full p-1 w-fit">
+                <button
+                  onClick={() => setEntryMode('photo')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    entryMode === 'photo' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
+                  }`}
+                >
+                  <FiCamera size={13} /> Add a photo
+                </button>
+                <button
+                  onClick={() => setEntryMode('milestone')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    entryMode === 'milestone' ? 'bg-white shadow-sm text-plum' : 'text-[#9a8a9c] hover:text-plum'
+                  }`}
+                >
+                  <FiStar size={13} /> Log a milestone
+                </button>
+              </div>
+              <button
+                onClick={() => setShowAddModal(false)}
+                aria-label="Close"
+                className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
+              >
+                <FiX size={14} />
+              </button>
+            </div>
+
+            {entryMode === 'photo' ? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoPick}
+            />
+
+            {!photoData ? (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={photoLoading}
+                className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-black/10 disabled:opacity-50"
+              >
+                <FiCamera size={14} />
+                {photoLoading ? (
+                  <>
+                    <ClipLoader size={12} color="#3d2340" /> Adding photo
+                  </>
+                ) : (
+                  'Choose a photo'
+                )}
+              </button>
+            ) : (
+              <div>
+                <img src={photoData} alt="Preview" className="rounded-xl max-h-64 object-cover" />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-xs text-peach font-semibold mt-2"
+                >
+                  Choose a different photo
+                </button>
+              </div>
+            )}
+            {photoError && <div className="text-xs text-[#9b3b3b] mt-1.5">{photoError}</div>}
+
+            {photoData && (
+              <>
+                <textarea
+                  rows={2}
+                  className="w-full mt-3 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+                  placeholder="Say something about this one (optional)"
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                />
+                <input
+                  className="w-full mt-2.5 px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+                  placeholder="Tags, comma separated (optional) — e.g. trip, anniversary, food"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                />
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={addMemory}
+                    disabled={saving}
+                    className="flex items-center gap-2 py-2.5 px-5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
+                  >
+                    {saving && <ClipLoader size={12} color="#3d2340" />}
+                    {saving ? 'Saving' : 'Save memory'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPhotoData(null)
+                      setCaption('')
+                      setTagsInput('')
+                      setShowAddModal(false)
+                    }}
+                    disabled={saving}
+                    className="py-2.5 px-5 rounded-xl text-sm border border-black/10"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <div>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {MILESTONE_TYPES.map((t) => {
+                const Icon = t.icon
+                const active = milestoneType === t.key
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setMilestoneType(t.key)}
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full border ${
+                      active ? 'border-peach bg-peachsoft font-semibold' : 'border-black/10 text-[#7a6a7c]'
+                    }`}
+                  >
+                    <Icon size={12} style={{ color: active ? undefined : t.color }} /> {t.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <input
+                className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+                placeholder="e.g. Our first date at the beach"
+                value={milestoneTitle}
+                onChange={(e) => setMilestoneTitle(e.target.value)}
+              />
+              <input
+                type="date"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-black/10 text-sm"
+                value={milestoneDate}
+                onChange={(e) => setMilestoneDate(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={addMilestone}
+              disabled={milestoneSaving || !milestoneTitle.trim()}
+              className="mt-3 py-2.5 px-5 rounded-xl font-semibold text-sm bg-gradient-to-br from-peach to-gold text-plumdeep disabled:opacity-50"
+            >
+              {milestoneSaving ? 'Saving...' : 'Add milestone'}
+            </button>
+            <p className="text-xs text-[#9a8a9c] mt-2.5">
+              Streak milestones show up here on their own — no need to log those by hand.
+            </p>
+          </div>
+            )}
+          </div>
         </div>
       )}
 
-      {featured &&
-        (() => {
-          const goal = featured
-          const pct = Math.min(100, Math.round(((goal.savedAmount || 0) / goal.targetAmount) * 100))
-          const remaining = Math.max(0, goal.targetAmount - (goal.savedAmount || 0))
-          const dLeft = daysUntil(goal.deadline)
-          const contributions = [...(goal.contributions || [])].sort((a, b) =>
-            (b.date || '').localeCompare(a.date || '')
-          )
-
-          return (
-            <div className="bg-white border border-black/10 rounded-2xl p-5 sm:p-6 mb-5">
-              <div className="flex flex-col lg:flex-row lg:items-center gap-6">
-                <div className="flex items-start sm:items-center gap-5 flex-1 min-w-0">
-                  <RingStat pct={pct} size={108} stroke={9} idSuffix={goal.id} caption="saved" />
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-xl font-bold text-ink truncate">{goal.title}</h3>
-                      <button
-                        onClick={() => removeGoal(goal)}
-                        aria-label="Remove goal"
-                        className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
-                      >
-                        <FiTrash2 size={13} />
-                      </button>
-                    </div>
-                    {goal.deadline && (
-                      <p className="text-xs text-[#9a8a9c] mt-0.5">
-                        {dLeft >= 0 ? `${dLeft} day${dLeft === 1 ? '' : 's'} left` : 'Deadline passed'} · target{' '}
-                        {new Date(`${goal.deadline}T00:00:00`).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </p>
-                    )}
-
-                    <div className="flex flex-wrap gap-x-8 gap-y-2 mt-4">
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-wide text-[#9a8a9c]">Saved</div>
-                        <div className="text-lg font-bold text-ink">{formatMoney(goal.savedAmount || 0)}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-wide text-[#9a8a9c]">Goal</div>
-                        <div className="text-lg font-bold text-ink">{formatMoney(goal.targetAmount)}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-wide text-[#9a8a9c]">
-                          Left to go
-                        </div>
-                        <div className="text-lg font-bold text-ink">{formatMoney(remaining)}</div>
-                      </div>
-                    </div>
-
-                    {contribGoalId === goal.id ? (
-                      <ContributeForm goal={goal} />
-                    ) : (
-                      <button
-                        onClick={() => openContribute(goal)}
-                        className="mt-4 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full border border-black/10 text-sm font-semibold text-peach hover:bg-peach/5 transition-colors"
-                      >
-                        <FiPlus size={13} /> Log a contribution
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {contributions.length > 0 && (
-                  <div className="lg:w-52 flex-shrink-0 lg:pl-6 lg:border-l lg:border-black/10 pt-5 lg:pt-0 border-t lg:border-t-0 border-black/5">
-                    <h4 className="text-[10px] font-bold uppercase tracking-wide text-[#9a8a9c] mb-2">Recent</h4>
-                    {contributions.slice(0, 4).map((c, i) => (
-                      <div key={i} className="flex items-center justify-between gap-2 py-1.5 text-sm">
-                        <span className="text-[#7a6a7c] truncate">
-                          {names[c.by] || '...'}
-                          {c.note ? ` — ${c.note}` : ''}
-                        </span>
-                        <span className="font-bold text-ink flex-shrink-0">+{formatMoney(c.amount)}</span>
-                      </div>
+      {loading ? null : memories.length === 0 ? (
+        <EmptyState
+          icon={FiImage}
+          title="No memories saved yet"
+          subtitle="Add your first photo or milestone above — the little moments are worth keeping."
+          action={{
+            label: 'Add your first photo',
+            onClick: () => {
+              setEntryMode('photo')
+              setShowAddModal(true)
+            },
+          }}
+        />
+      ) : (
+        <>
+          {layout === 'grid' ? (
+            filteredMemories.length === 0 ? (
+              <div className="text-sm text-[#a892a9] py-6 text-center">No memories match that search.</div>
+            ) : (
+              <>
+                {featuredMemories.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                    {featuredMemories.map((m) => (
+                      <MemoryPhotoCard
+                        key={m.id}
+                        entry={m}
+                        names={names}
+                        size="lg"
+                        onOpen={() => {
+                          setNewTag('')
+                          setLightbox(m)
+                        }}
+                        onTogglePin={() => togglePinned(m)}
+                      />
                     ))}
                   </div>
                 )}
-              </div>
-            </div>
-          )
-        })()}
 
-      {rest.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
-          {rest.map((goal) => {
-            const pct = Math.min(100, Math.round(((goal.savedAmount || 0) / goal.targetAmount) * 100))
-            const remaining = Math.max(0, goal.targetAmount - (goal.savedAmount || 0))
-
-            return (
-              <div key={goal.id} className="bg-white border border-black/10 rounded-2xl p-5">
-                <div className="flex items-center gap-4">
-                  <RingStat pct={pct} size={72} stroke={7} idSuffix={goal.id} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h4 className="font-bold text-base text-ink truncate">{goal.title}</h4>
-                      <button
-                        onClick={() => removeGoal(goal)}
-                        aria-label="Remove goal"
-                        className="w-6 h-6 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
-                      >
-                        <FiTrash2 size={11} />
-                      </button>
+                {restMemories.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                      <h2 className="text-base font-semibold text-plum">More memories</h2>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => setGridYear('all')}
+                          className={`text-xs px-3 py-1.5 rounded-full border font-semibold ${
+                            gridYear === 'all' ? 'bg-plum text-white border-plum' : 'border-black/10 text-[#7a6a7c]'
+                          }`}
+                        >
+                          All years
+                        </button>
+                        {gridYears.map((y) => (
+                          <button
+                            key={y}
+                            onClick={() => setGridYear(y)}
+                            className={`text-xs px-3 py-1.5 rounded-full border font-semibold ${
+                              gridYear === y ? 'bg-plum text-white border-plum' : 'border-black/10 text-[#7a6a7c]'
+                            }`}
+                          >
+                            {y}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <p className="text-sm text-[#9a8a9c] mt-0.5 truncate">
-                      {formatMoney(goal.savedAmount || 0)} of {formatMoney(goal.targetAmount)} ·{' '}
-                      {formatMoney(remaining)} left
-                    </p>
-                  </div>
-                </div>
 
-                {contribGoalId === goal.id ? (
-                  <ContributeForm goal={goal} />
-                ) : (
-                  <button
-                    onClick={() => openContribute(goal)}
-                    className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-black/10 text-xs font-semibold text-peach hover:bg-peach/5 transition-colors"
-                  >
-                    <FiPlus size={12} /> Log a contribution
-                  </button>
+                    {visibleRestMemories.length === 0 ? (
+                      <div className="text-sm text-[#a892a9] py-6 text-center">No memories for that year.</div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                        {visibleRestMemories.map((m) => (
+                          <MemoryPhotoCard
+                            key={m.id}
+                            entry={m}
+                            names={names}
+                            size="sm"
+                            onOpen={() => {
+                              setNewTag('')
+                              setLightbox(m)
+                            }}
+                            onTogglePin={() => togglePinned(m)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
-              </div>
+              </>
             )
-          })}
-        </div>
+          ) : timelineGroups.length === 0 ? (
+            <div className="text-sm text-[#a892a9] py-6 text-center">No memories match that search.</div>
+          ) : (
+            <div className="grid lg:grid-cols-[1fr_300px] gap-6 items-start">
+              <div className="flex flex-col gap-6 min-w-0">
+                {timelineGroups.map(([dateStr, entries]) => (
+                  <div key={dateStr}>
+                    <div className="text-xs font-semibold text-[#9a8a9c] uppercase tracking-wide mb-3">
+                      {friendlyDate(dateStr)}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {entries.map((entry) => {
+                        if ((entry.entryType || 'photo') === 'milestone') {
+                          const meta = milestoneMeta(entry.milestoneType)
+                          const Icon = meta.icon
+                          return (
+                            <div
+                              key={entry.id}
+                              className="col-span-2 sm:col-span-3 flex items-center gap-3 border border-black/5 rounded-xl p-3.5 bg-white"
+                            >
+                              <div
+                                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                                style={{ backgroundColor: `${meta.color}20` }}
+                              >
+                                <Icon size={16} style={{ color: meta.color }} />
+                              </div>
+                              <div className="flex-1">
+                                <div className="text-sm font-semibold">{entry.title}</div>
+                                <div className="text-[10.5px] text-[#9a8a9c]">
+                                  {meta.label}
+                                  {entry.auto ? ' · auto-tracked' : ` · added by ${names[entry.from] || '...'}`}
+                                </div>
+                              </div>
+                              {!entry.auto && entry.from === firebaseUser.uid && (
+                                <button
+                                  onClick={() => removeMemory(entry.id)}
+                                  aria-label="Delete milestone"
+                                  className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
+                                >
+                                  <FiX size={12} />
+                                </button>
+                              )}
+                            </div>
+                          )
+                        }
+                        return (
+                          <MemoryPhotoCard
+                            key={entry.id}
+                            entry={entry}
+                            names={names}
+                            size="md"
+                            onOpen={() => {
+                              setNewTag('')
+                              setLightbox(entry)
+                            }}
+                            onTogglePin={() => togglePinned(entry)}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <aside className="hidden lg:block sticky top-4 bg-white border border-black/10 rounded-2xl p-5 max-h-[calc(100vh-2rem)] overflow-y-auto">
+                {yearGroups.map(({ year, count, months }) => (
+                  <div key={year} className="mb-5 last:mb-0">
+                    <div className="flex items-baseline justify-between mb-1">
+                      <span className="text-sm font-bold text-plum flex items-center gap-1.5">
+                        <FiCalendar size={13} className="text-[#9a8a9c]" /> {year}
+                      </span>
+                      <span className="text-[11px] text-[#9a8a9c]">{count} {count === 1 ? 'memory' : 'memories'}</span>
+                    </div>
+                    {months.map(({ month, entries }) => (
+                      <div key={month} className="relative pl-5 mt-3">
+                        <div className="absolute left-[3px] top-1 bottom-0 w-px bg-black/10" />
+                        <div className="absolute left-0 top-1 w-2 h-2 rounded-full bg-peach" />
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-[#9a8a9c] mb-2">
+                          {month} · {entries.length}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          {entries.map((entry) => {
+                            const isMilestone = (entry.entryType || 'photo') === 'milestone'
+                            const meta = isMilestone ? milestoneMeta(entry.milestoneType) : null
+                            const Icon = meta?.icon
+                            return (
+                              <div key={entry.id} className="flex items-center gap-2.5">
+                                {isMilestone ? (
+                                  <div
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                    style={{ backgroundColor: `${meta.color}20` }}
+                                  >
+                                    <Icon size={13} style={{ color: meta.color }} />
+                                  </div>
+                                ) : (
+                                  <img
+                                    src={entry.photoData}
+                                    alt=""
+                                    className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                                  />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="text-[12.5px] font-semibold truncate">
+                                    {entry.title || entry.caption || 'Untitled memory'}
+                                  </div>
+                                  <div className="text-[10px] text-[#9a8a9c] truncate">
+                                    {friendlyDate(entry._dateStr)} · {names[entry.from] || '...'}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+
+                <div className="jar-note text-[13px] mt-5">"A map of all the places we chose each other."</div>
+              </aside>
+            </div>
+          )}
+        </>
       )}
 
-      {fundedGoals.length > 0 && (
-        <div className="bg-white border border-black/10 rounded-2xl p-5">
-          <h3 className="font-semibold mb-3">Fully funded</h3>
-          {fundedGoals.map((goal) => (
-            <div
-              key={goal.id}
-              className="flex items-center justify-between py-2.5 border-b border-black/10 last:border-b-0"
-            >
-              <div>
-                <div>{goal.title}</div>
-                <div className="text-xs text-[#9a8a9c] mt-0.5">{formatMoney(goal.targetAmount)} saved</div>
+      {lightbox && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center p-6 z-50"
+          onClick={() => setLightbox(null)}
+        >
+          <div
+            className="bg-white rounded-2xl overflow-hidden max-w-lg w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img src={lightbox.photoData} alt={lightbox.caption || ''} className="w-full max-h-[70vh] object-cover" />
+            <div className="p-5">
+              {lightbox.caption && <div className="text-sm mb-2">{lightbox.caption}</div>}
+              <div className="text-xs text-[#9a8a9c]">
+                Added by {names[lightbox.from] || '...'}
               </div>
-              <button
-                onClick={() => removeGoal(goal)}
-                aria-label="Remove goal"
-                className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#9a8a9c] flex-shrink-0"
-              >
-                <FiTrash2 size={13} />
-              </button>
+
+              <ReactionBar
+                className="mt-3"
+                path={['couples', couple.id, 'memories', lightbox.id]}
+                reactions={memories.find((m) => m.id === lightbox.id)?.reactions || lightbox.reactions}
+                uid={firebaseUser.uid}
+                names={names}
+              />
+
+              <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                {(lightbox.tags || []).map((t) => (
+                  <span
+                    key={t}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-black/10 text-[#7a6a7c]"
+                  >
+                    #{t}
+                    <button
+                      onClick={() => removeTagFromLightbox(t)}
+                      aria-label={`Remove tag ${t}`}
+                      className="text-[#a892a9]"
+                    >
+                      <FiX size={11} />
+                    </button>
+                  </span>
+                ))}
+                <div className="flex items-center gap-1">
+                  <FiTag size={12} className="text-[#a892a9]" />
+                  <input
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addTagToLightbox()
+                      }
+                    }}
+                    placeholder="Add tag"
+                    className="text-xs px-2 py-1 rounded-full border border-black/10 w-20 focus:w-28 transition-all"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => {
+                    togglePinned(lightbox)
+                    setLightbox((l) => (l ? { ...l, pinned: !l.pinned } : l))
+                  }}
+                  className="flex items-center gap-1.5 text-xs py-2 px-3.5 rounded-xl border border-black/10"
+                >
+                  <FiHeart size={12} fill={lightbox.pinned ? 'currentColor' : 'none'} />
+                  {lightbox.pinned ? 'Favorited' : 'Favorite'}
+                </button>
+                {lightbox.from === firebaseUser.uid && (
+                  <button
+                    onClick={() => removeMemory(lightbox.id)}
+                    className="text-xs text-[#9b3b3b] py-2 px-3.5 rounded-xl border border-black/10"
+                  >
+                    Delete
+                  </button>
+                )}
+                <button
+                  onClick={() => setLightbox(null)}
+                  className="text-xs py-2 px-3.5 rounded-xl border border-black/10 ml-auto"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-          ))}
+          </div>
         </div>
       )}
     </div>

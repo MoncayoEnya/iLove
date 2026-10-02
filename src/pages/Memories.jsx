@@ -37,6 +37,9 @@ import { compressImage } from '../utils/compressImage'
 import { friendlyDate, todayStr } from '../utils/date'
 import CropModal from '../components/CropModal'
 import EmptyState from '../components/EmptyState'
+import { undoableDelete } from '../utils/undoDelete'
+import ReactionBar from '../components/ReactionBar'
+import { ReactionIcon } from '../utils/reactions'
 
 // Milestone types a person can log by hand. "Streak" milestones are instead
 // generated automatically below, never added manually here.
@@ -72,6 +75,13 @@ function MemoryPhotoCard({ entry, names, onOpen, onTogglePin, size = 'md' }) {
           className={`w-full ${heightClass} object-cover`}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-black/0" />
+        {entry.reactions && Object.values(entry.reactions).some(Boolean) && (
+          <div className="pointer-events-none absolute top-2 left-2 flex items-center gap-1 bg-white/90 rounded-full px-2 py-1 shadow-sm">
+            {[...new Set(Object.values(entry.reactions).filter(Boolean))].map((k) => (
+              <ReactionIcon key={k} k={k} size={11} />
+            ))}
+          </div>
+        )}
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 p-3 text-white">
           <div className={`${titleClass} font-serif font-semibold truncate`}>{entry.caption || 'Untitled memory'}</div>
           <div className="text-[10.5px] opacity-85 truncate">Added by {names[entry.from] || '...'}</div>
@@ -283,9 +293,14 @@ export default function Memories({
 
   async function removeMemory(id) {
     try {
-      await deleteDoc(doc(db, 'couples', couple.id, 'memories', id))
+      const entry = memories.find((m) => m.id === id) || (lightbox?.id === id ? lightbox : null)
+      const ref = doc(db, 'couples', couple.id, 'memories', id)
       setLightbox(null)
-      toast.success('Memory deleted.')
+      if (entry) await undoableDelete(ref, entry, 'Memory deleted')
+      else {
+        await deleteDoc(ref)
+        toast.success('Memory deleted.')
+      }
     } catch (e) {
       toast.error("Couldn't delete that memory — try again.")
     }
@@ -620,6 +635,13 @@ export default function Memories({
           icon={FiImage}
           title="No memories saved yet"
           subtitle="Add your first photo or milestone above — the little moments are worth keeping."
+          action={{
+            label: 'Add your first photo',
+            onClick: () => {
+              setEntryMode('photo')
+              setShowAddModal(true)
+            },
+          }}
         />
       ) : (
         <>
@@ -836,6 +858,14 @@ export default function Memories({
               <div className="text-xs text-[#9a8a9c]">
                 Added by {names[lightbox.from] || '...'}
               </div>
+
+              <ReactionBar
+                className="mt-3"
+                path={['couples', couple.id, 'memories', lightbox.id]}
+                reactions={memories.find((m) => m.id === lightbox.id)?.reactions || lightbox.reactions}
+                uid={firebaseUser.uid}
+                names={names}
+              />
 
               <div className="flex flex-wrap items-center gap-1.5 mt-3">
                 {(lightbox.tags || []).map((t) => (

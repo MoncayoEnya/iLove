@@ -18,7 +18,10 @@ import { useEffect } from 'react'
 
 const CARD_RE = /\brounded-(2xl|3xl)\b/
 const ROW_RE = /\brounded-xl\b/
-const SURFACE_RE = /\b(border|bg-white|bg-\[#faf6f8\]|bg-gradient-to-|bg-blush|shadow)/
+const SURFACE_RE = /\b(border|bg-white|bg-\[#|bg-gradient-to-|bg-blush|bg-plumdeep|bg-peach|bg-gold|shadow)/
+// Big rounded blocks with real padding are cards even without a border or
+// background class (some get their colour from an inline style).
+const PADDED_RE = /(^|\s)p-([4-9]|1[0-2])(\s|$)/
 const POSITIONED_RE = /(^|\s)(fixed|absolute|sticky)(\s|$)/
 const HAS_TRANSFORM_CLASS_RE = /(^|\s)-?(rotate|scale|translate|skew)-/
 const PRESSABLE = 'button, a[class*="rounded"], [role="button"], [class*="cursor-pointer"]'
@@ -40,8 +43,10 @@ function hasReactClick(el) {
   return false
 }
 
+// Overlays (modals, sheets) and anything wrapped in data-lv-off (e.g. the
+// places map, whose tiles are images) are left alone.
 function isOverlay(el) {
-  return !!el.closest('[role="dialog"], .fixed, [aria-modal="true"]')
+  return !!el.closest('[role="dialog"], .fixed, [aria-modal="true"], [data-lv-off]')
 }
 
 function classify(el) {
@@ -50,8 +55,8 @@ function classify(el) {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'IMG' || tag === 'VIDEO') return null
   const cls = classOf(el)
   if (POSITIONED_RE.test(cls)) return null
+  if (CARD_RE.test(cls) && (SURFACE_RE.test(cls) || PADDED_RE.test(cls) || el.style.background)) return 'card'
   if (!SURFACE_RE.test(cls)) return null
-  if (CARD_RE.test(cls)) return 'card'
   // Bordered rounded-xl blocks with some padding are list rows (tasks,
   // goals, settings rows…). Buttons with that shape are handled as buttons.
   if (ROW_RE.test(cls) && /\bborder\b/.test(cls) && /\bp[xy]?-[3-9]/.test(cls) && tag !== 'BUTTON' && tag !== 'A') {
@@ -129,13 +134,27 @@ export function useLivelyUI() {
       }
     }
 
+    function clipsContent(el) {
+      const ov = el && getComputedStyle(el).overflow
+      return ov === 'hidden' || ov === 'clip'
+    }
+
     function setupImages(root) {
-      root.querySelectorAll('img:not([data-lv-zoom])').forEach((img) => {
+      const imgs = root.tagName === 'IMG' ? [root] : root.querySelectorAll('img')
+      imgs.forEach((img) => {
+        if (img.hasAttribute('data-lv-zoom') || img.hasAttribute('data-lv-photo') || isOverlay(img)) return
         const parent = img.parentElement
-        if (!parent || isOverlay(img)) return
-        const ov = getComputedStyle(parent).overflow
-        if ((ov === 'hidden' || ov === 'clip') && parent.offsetWidth >= 80) {
+        if (!parent) return
+        const card = img.closest('[data-lv-card]')
+        // Zoom inside a frame: the direct parent clips, or the card it sits
+        // in clips (memory cards: card > button > img).
+        if ((clipsContent(parent) && parent.offsetWidth >= 80) || (card && clipsContent(card))) {
           img.setAttribute('data-lv-zoom', '')
+          return
+        }
+        // Free-standing rounded photos (photo grids): pop the photo itself.
+        if (/\brounded/.test(classOf(img)) && /\bobject-cover\b/.test(classOf(img)) && img.offsetWidth >= 60) {
+          img.setAttribute('data-lv-photo', '')
         }
       })
     }

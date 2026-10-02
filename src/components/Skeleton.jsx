@@ -3,7 +3,7 @@
 // content arrives.
 
 export function Skeleton({ className = '' }) {
-  return <div className={`animate-pulse rounded-lg bg-black/[0.06] ${className}`} />
+  return <div className={`lv-shimmer rounded-lg bg-black/[0.06] ${className}`} />
 }
 
 // A single check-in/history-style card: a title line + a couple of body lines.

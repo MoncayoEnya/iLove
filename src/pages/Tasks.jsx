@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import dayjs from 'dayjs'
+import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
 import toast from 'react-hot-toast'
 import {
   FiCalendar,
+  FiCheck,
   FiChevronLeft,
   FiChevronRight,
   FiLock,
@@ -17,6 +19,8 @@ import { usePartner } from '../hooks/usePartner'
 import { useMemberNames } from '../hooks/useMemberNames'
 import { todayStr } from '../utils/date'
 import { isLockedFor } from '../utils/privacy'
+import { celebrateFrom } from '../utils/celebrate'
+import { haptic } from '../utils/haptics'
 
 /** Monday (start of day) of the week containing `d`. */
 function mondayOf(d) {
@@ -55,27 +59,61 @@ function TaskRow({ task, onToggle, locked, ownerLabel }) {
     )
   }
 
+  return <SwipeableTaskRow task={task} onToggle={onToggle} overdue={overdue} />
+}
+
+// Swipe a task to the right to complete it (phones), or tap the circle.
+// The row slides back if the swipe isn't far enough.
+function SwipeableTaskRow({ task, onToggle, overdue }) {
+  const x = useMotionValue(0)
+  const revealOpacity = useTransform(x, [0, 40, 90], [0, 0.6, 1])
+  const checkScale = useTransform(x, [0, 90], [0.5, 1.15])
+
   return (
-    <div className="flex items-center gap-3 py-3 border-b border-black/5 last:border-b-0">
-      <button
-        onClick={onToggle}
-        aria-label="Mark task done"
-        className="w-5 h-5 rounded-full border border-black/20 flex-shrink-0 hover:border-peach transition-colors"
-      />
-      <span className="flex-1 text-[15px] text-plumdeep truncate">{task.text}</span>
-      {task.private && <FiLock size={11} className="text-[#b6a5b8] flex-shrink-0" />}
-      {task.dueDate && (
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {overdue && <span className="w-1.5 h-1.5 rounded-full bg-[#e8635a]" />}
-          <span
-            className={`text-xs rounded-full px-2.5 py-1 font-medium whitespace-nowrap ${
-              overdue ? 'bg-[#fbe4e1] text-[#c0473c]' : 'bg-black/[0.04] text-[#7a6a7c]'
-            }`}
-          >
-            {dayjs(task.dueDate).format('MMM D')}
-          </span>
-        </div>
-      )}
+    <div className="relative border-b border-black/5 last:border-b-0 overflow-hidden">
+      <motion.div
+        aria-hidden="true"
+        style={{ opacity: revealOpacity }}
+        className="absolute inset-0 flex items-center pl-3 bg-gradient-to-r from-[#d9f2ea] to-transparent rounded-lg"
+      >
+        <motion.span style={{ scale: checkScale }} className="text-[#1c7a63]">
+          <FiCheck size={18} />
+        </motion.span>
+      </motion.div>
+      <motion.div
+        drag="x"
+        dragDirectionLock
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={{ left: 0.05, right: 0.6 }}
+        style={{ x, touchAction: 'pan-y' }}
+        onDragEnd={(e, info) => {
+          if (info.offset.x > 90) onToggle(e.target)
+        }}
+        className="relative flex items-center gap-3 py-3 bg-white"
+      >
+        <motion.button
+          onClick={(e) => onToggle(e.currentTarget)}
+          aria-label="Mark task done"
+          whileTap={{ scale: 0.8 }}
+          className="w-5 h-5 rounded-full border border-black/20 flex-shrink-0 hover:border-peach hover:bg-peach/10 transition-colors flex items-center justify-center group"
+        >
+          <FiCheck size={11} className="text-peach opacity-0 group-hover:opacity-100 transition-opacity" />
+        </motion.button>
+        <span className="flex-1 text-[15px] text-plumdeep truncate">{task.text}</span>
+        {task.private && <FiLock size={11} className="text-[#b6a5b8] flex-shrink-0" />}
+        {task.dueDate && (
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {overdue && <span className="w-1.5 h-1.5 rounded-full bg-[#e8635a] animate-pulse" />}
+            <span
+              className={`text-xs rounded-full px-2.5 py-1 font-medium whitespace-nowrap ${
+                overdue ? 'bg-[#fbe4e1] text-[#c0473c]' : 'bg-black/[0.04] text-[#7a6a7c]'
+              }`}
+            >
+              {dayjs(task.dueDate).format('MMM D')}
+            </span>
+          </div>
+        )}
+      </motion.div>
     </div>
   )
 }
@@ -105,15 +143,25 @@ function TaskColumn({ avatar, title, tasks, firebaseUid, names, partner, onToggl
       {tasks.length === 0 ? (
         <div className="text-sm text-[#c3b3c5] italic py-2">Nothing here this week</div>
       ) : (
-        tasks.map((t) => (
-          <TaskRow
-            key={t.id}
-            task={t}
-            locked={isLockedFor(t, firebaseUid)}
-            ownerLabel={names[t.ownerId] || partner?.displayName || 'Your partner'}
-            onToggle={() => onToggle(t)}
-          />
-        ))
+        <AnimatePresence initial={false}>
+          {tasks.map((t) => (
+            <motion.div
+              key={t.id}
+              layout
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0, x: 40 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 34 }}
+            >
+              <TaskRow
+                task={t}
+                locked={isLockedFor(t, firebaseUid)}
+                ownerLabel={names[t.ownerId] || partner?.displayName || 'Your partner'}
+                onToggle={(el) => onToggle(t, el)}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       )}
     </div>
   )
@@ -167,16 +215,19 @@ export default function Tasks() {
     }
   }
 
-  async function toggle(task) {
+  async function toggle(task, originEl) {
     if (isLockedFor(task, firebaseUser.uid)) return
     const ref = doc(db, 'couples', coupleId, 'tasks', task.id)
     try {
       if (task.done) {
         await updateDoc(ref, { done: false, completedAt: null, completedBy: null })
       } else {
+        // Fire the confetti from the checkbox that was just tapped.
+        celebrateFrom(originEl || (typeof document !== 'undefined' ? document.activeElement : null))
         await updateDoc(ref, { done: true, completedAt: serverTimestamp(), completedBy: firebaseUser.uid })
       }
     } catch (e) {
+      haptic('warning')
       toast.error("Couldn't update that task — try again.")
     }
   }

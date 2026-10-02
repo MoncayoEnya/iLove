@@ -32,14 +32,22 @@ import ConflictRecovery from './pages/ConflictRecovery'
 import FlappyBird from './pages/FlappyBird'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
+import Wrapped from './pages/Wrapped'
 import { useLocalReminders } from './hooks/useLocalReminders'
 import { usePushSubscription } from './hooks/usePushSubscription'
+import { useLivelyUI } from './hooks/useLivelyUI'
+import { usePresenceHeartbeat } from './hooks/usePresence'
+import { usePartnerSignals } from './hooks/usePartnerSignals'
 
 function AppLayout({ children }) {
   // Fires browser notifications for upcoming calendar reminders while the
   // app is open, on whichever page the person happens to be on.
   useLocalReminders()
   usePushSubscription()
+  // Online status for your partner to see, and incoming "thinking of you"
+  // hearts from them.
+  usePresenceHeartbeat()
+  usePartnerSignals()
   const { pathname } = useLocation()
 
   // The connection view (you & partner, side by side) is reachable from
@@ -87,6 +95,9 @@ function AppLayout({ children }) {
 
 export default function App() {
   const location = useLocation()
+  // Hover/tap/scroll animations for buttons, cards and rows on every page.
+  // See src/hooks/useLivelyUI.js and src/styles/lively.css.
+  useLivelyUI()
 
   return (
     <>
@@ -115,6 +126,14 @@ export default function App() {
         element={
           <ProtectedRoute requireCouple={false}>
             <LinkPartner />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/wrapped"
+        element={
+          <ProtectedRoute>
+            <Wrapped />
           </ProtectedRoute>
         }
       />

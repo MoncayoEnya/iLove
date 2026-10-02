@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore'
+import { addDoc, collection, doc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import toast from 'react-hot-toast'
 import { ClipLoader } from 'react-spinners'
@@ -22,6 +22,8 @@ import { compressImage } from '../utils/compressImage'
 import EmptyState from '../components/EmptyState'
 import BottomSheet from '../components/BottomSheet'
 import CropModal from '../components/CropModal'
+import { undoableDelete } from '../utils/undoDelete'
+import PlacesMap from '../components/PlacesMap'
 
 // Same tagging pattern as Love Jar's categories — a fixed set of chips,
 // no free-tagging. Kept to a simple list for v1 (no Maps SDK / pins);
@@ -58,6 +60,7 @@ export default function SharedPlaces() {
 
   const [places, setPlaces] = useState([])
   const [activeFilter, setActiveFilter] = useState(null) // null = all
+  const [view, setView] = useState('grid') // 'grid' | 'map'
   const [sheetOpen, setSheetOpen] = useState(false)
 
   const [name, setName] = useState('')
@@ -143,7 +146,7 @@ export default function SharedPlaces() {
 
   async function removePlace(place) {
     try {
-      await deleteDoc(doc(db, 'couples', coupleId, 'sharedPlaces', place.id))
+      await undoableDelete(doc(db, 'couples', coupleId, 'sharedPlaces', place.id), place, 'Place removed')
     } catch (e) {
       toast.error("Couldn't remove that — try again.")
     }
@@ -190,12 +193,34 @@ export default function SharedPlaces() {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {places.length > 0 && (
+        <div className="flex gap-1 bg-black/[0.04] rounded-xl p-1 w-fit mb-5">
+          {[
+            ['grid', 'Cards'],
+            ['map', 'Map'],
+          ].map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors ${
+                view === v ? 'bg-white shadow-sm text-plumdeep' : 'text-[#7a6a7c]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {view === 'map' && places.length > 0 ? (
+        <PlacesMap coupleId={coupleId} places={filtered} />
+      ) : filtered.length === 0 ? (
         <div className="bg-white border border-black/10 rounded-2xl p-5">
           <EmptyState
             icon={FiMapPin}
             title="No places yet"
             subtitle="Add the first spot — a favorite, a date idea, or somewhere you want to go together."
+            action={{ label: 'Add a place', onClick: () => setSheetOpen(true) }}
           />
         </div>
       ) : (

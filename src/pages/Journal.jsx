@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
@@ -20,6 +19,7 @@ import { useMemberNames } from '../hooks/useMemberNames'
 import { friendlyDate, todayStr, yesterdayStr } from '../utils/date'
 import EmptyState from '../components/EmptyState'
 import { SkeletonList } from '../components/Skeleton'
+import { undoableDelete } from '../utils/undoDelete'
 
 export default function Journal({ embedded = false }) {
   const { firebaseUser, couple } = useAuth()
@@ -105,7 +105,7 @@ export default function Journal({ embedded = false }) {
 
   async function remove(entry) {
     try {
-      await deleteDoc(doc(db, 'couples', coupleId, 'journalEntries', entry.id))
+      await undoableDelete(doc(db, 'couples', coupleId, 'journalEntries', entry.id), entry, 'Entry deleted')
       setConfirmingDelete(null)
       setOpenMenuId(null)
     } catch (e) {

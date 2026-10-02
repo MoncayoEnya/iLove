@@ -434,7 +434,7 @@ export default function Chat() {
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-2.5">
           {visibleMessages.length === 0 && (
             searchTerm.trim() ? (
-              <EmptyState icon={FiSearch} title="No messages match that search" />
+              <EmptyState delay={0} icon={FiSearch} title="No messages match that search" />
             ) : favoritesOnly ? (
               <EmptyState
                 icon={FiStar}

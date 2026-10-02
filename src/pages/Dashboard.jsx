@@ -19,12 +19,15 @@ import {
   FiCamera,
   FiFrown,
   FiGift,
+  FiHeart,
   FiHelpCircle,
   FiMeh,
   FiSmile,
   FiSun,
 } from 'react-icons/fi'
 import { FaFire } from 'react-icons/fa'
+import { HiSparkles } from 'react-icons/hi2'
+import MoodIcon from '../components/MoodIcon'
 import { db } from '../firebase'
 import BottomSheet from '../components/BottomSheet'
 import { useAuth } from '../context/AuthContext'
@@ -33,6 +36,11 @@ import { compressImage } from '../utils/compressImage'
 import { MOODS } from '../utils/moods'
 import { anniversaryInfo, ordinalSuffix, todayStr } from '../utils/date'
 import { computeRelationshipHealth } from '../utils/relationshipHealth'
+import { celebrate, STREAK_MILESTONES } from '../utils/celebrate'
+import OnThisDay from '../components/OnThisDay'
+import TodaySuggestion from '../components/TodaySuggestion'
+import DailyQuestion from '../components/DailyQuestion'
+import CountdownCard from '../components/CountdownCard'
 
 // Counts a number up from 0 when it first appears (or from the previous
 // value when it changes), so stats feel alive instead of just sitting there.
@@ -128,6 +136,7 @@ export default function Dashboard() {
   const [moodView, setMoodView] = useState('partner') // 'partner' | 'you' — flip the mood card
   const [nudgeSending, setNudgeSending] = useState(false)
   const [nudgeCooldown, setNudgeCooldown] = useState(false)
+  const [answeredQuestion, setAnsweredQuestion] = useState(undefined) // undefined = still loading
   const photoInputRef = useRef(null)
   const moodTouchXRef = useRef(null)
 
@@ -251,6 +260,7 @@ export default function Dashboard() {
       createdAt: new Date(),
     })
     setCheckinOpen(false)
+    celebrate({ kind: 'hearts', intensity: 0.6 })
 
     // If both partners have now checked in today, bump the streak (once)
     const members = couple.members
@@ -259,6 +269,9 @@ export default function Dashboard() {
       const otherCheckedIn = checkins.some((c) => c.uid === otherUid)
       if (otherCheckedIn && couple.lastCheckinDate !== today) {
         const coupleRef = doc(db, 'couples', coupleId)
+        // Transactions can retry, so side effects (toasts, confetti) run
+        // after it commits, from what the final attempt decided.
+        let outcome = null
         await runTransaction(db, async (tx) => {
           const snap = await tx.get(coupleRef)
           const data = snap.data()
@@ -293,12 +306,22 @@ export default function Dashboard() {
             streakGraceAvailable: newStreak === 1 ? true : !graceUsed && graceAvailable,
           })
 
+          outcome = { newStreak, graceUsed, previous: data.streak || 0 }
+        })
+        if (outcome) {
+          const { newStreak, graceUsed, previous } = outcome
           if (graceUsed) {
             toast.success("Missed a day? No worries — your streak grace day covered it.")
-          } else if (newStreak === 1 && data.streak > 1) {
-            toast("Streak restarted today — every streak starts somewhere.", { icon: '🔥' })
+          } else if (newStreak === 1 && previous > 1) {
+            toast("Streak restarted today — every streak starts somewhere.", { icon: <FaFire className="text-peach" /> })
           }
-        })
+          if (STREAK_MILESTONES.includes(newStreak)) {
+            celebrate({ kind: 'big' })
+            toast(`${newStreak}-day streak together!`, { icon: <FaFire className="text-peach" /> })
+          } else {
+            toast('You both checked in today', { icon: <FiHeart className="text-peach" fill="currentColor" /> })
+          }
+        }
       }
     }
   }
@@ -336,6 +359,18 @@ export default function Dashboard() {
     }
   }
 
+  // One live line under the greeting about how your partner's day is going.
+  const partnerName = partner?.displayName || 'Your partner'
+  const partnerMood = MOODS.find((m) => m.v === partnerCheckin?.mood)
+  const partnerStatusLine = partnerCheckin ? (
+    <span className="inline-flex items-center gap-1.5">
+      {partnerName} checked in feeling {partnerMood?.l?.toLowerCase() || 'something'}
+      {partnerMood && <MoodIcon mood={partnerMood.v} size={14} />}
+    </span>
+  ) : myCheckin
+    ? `You've checked in. Waiting on ${partnerName}.`
+    : `Neither of you has checked in yet today.`
+
   const displayedMood = moodView === 'you' ? myCheckin?.mood : partnerCheckin?.mood
   const DisplayedMoodIcon = moodIconFor(displayedMood)
 
@@ -350,9 +385,34 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="mb-6">
-          <p className="text-sm text-[#7a6a7c] mb-4">
-            {greeting()}, {profile.displayName}
-          </p>
+          <div className="mb-4">
+            <h1 className="text-2xl font-semibold">
+              {greeting()}, {profile.displayName}{' '}
+              <motion.span
+                className="inline-flex align-middle text-peach"
+                animate={{ scale: [1, 1.25, 1, 1.15, 1] }}
+                transition={{ duration: 1.4, delay: 0.4 }}
+              >
+                <FiHeart size={20} fill="currentColor" />
+              </motion.span>
+            </h1>
+            <p className="text-sm text-[#7a6a7c] mt-1">{partnerStatusLine}</p>
+          </div>
+
+          <TodaySuggestion
+            myCheckin={myCheckin}
+            partnerCheckin={partnerCheckin}
+            partnerName={partner?.displayName || 'Your partner'}
+            events={events}
+            jar={jar}
+            myUid={firebaseUser.uid}
+            onCheckin={() => setCheckinOpen(true)}
+            onNudge={sendNudge}
+            nudgeDisabled={nudgeSending || nudgeCooldown}
+            answeredDailyQuestion={answeredQuestion}
+          />
+
+          <CountdownCard events={events} />
 
           {/* Row 1 — Relationship pulse (tall) + Streak/Today stacked in the other two columns */}
           <div className="grid grid-cols-1 md:grid-cols-[1.8fr_1fr_1fr] gap-4">
@@ -590,6 +650,41 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+
+          <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            <DailyQuestion
+              coupleId={coupleId}
+              uid={firebaseUser.uid}
+              partnerUid={partner?.id}
+              partnerName={partner?.displayName || 'Your partner'}
+              today={today}
+              onStatus={setAnsweredQuestion}
+            />
+            <OnThisDay
+              coupleId={coupleId}
+              names={{
+                [firebaseUser.uid]: profile.displayName,
+                ...(partner ? { [partner.id]: partner.displayName } : {}),
+              }}
+            />
+          </div>
+
+          <Link
+            to="/wrapped"
+            className="mt-4 flex items-center justify-between gap-4 rounded-2xl p-5 text-white overflow-hidden relative"
+            style={{ background: 'linear-gradient(120deg, #3d2340 0%, #7a3f8c 55%, #e8a87c 100%)' }}
+          >
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide opacity-80">{dayjs().year()} so far</div>
+              <div className="text-lg font-semibold font-serif flex items-center gap-2">
+                Your year together, wrapped <HiSparkles className="text-gold" />
+              </div>
+              <div className="text-xs opacity-85 mt-0.5">Memories, moods, streaks and your song — as a story.</div>
+            </div>
+            <span className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+              <FiArrowRight size={18} />
+            </span>
+          </Link>
         </div>
       )}
 
@@ -599,11 +694,11 @@ export default function Dashboard() {
             <div
               key={m.v}
               onClick={() => setPickedMood(m.v)}
-              className={`flex-1 border rounded-xl py-3 text-center cursor-pointer text-2xl ${
+              className={`flex-1 border rounded-xl py-3 text-center cursor-pointer flex flex-col items-center ${
                 pickedMood === m.v ? 'border-peach bg-peachsoft' : 'border-black/10'
               }`}
             >
-              <div>{m.e}</div>
+              <MoodIcon mood={m.v} size={24} />
               <div className="text-[10px] text-[#9a8a9c] mt-1">{m.l}</div>
             </div>
           ))}

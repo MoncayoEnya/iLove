@@ -1,0 +1,56 @@
+// One question a day, the same for both partners. Picked by date, so it
+// changes at midnight and repeats only after the whole list has gone round.
+// Add or reorder freely — nothing is stored per question.
+export const DAILY_QUESTIONS = [
+  'What made you smile today?',
+  'What is one small thing I do that you love?',
+  'Where would you teleport us right now if you could?',
+  'What song reminds you of us?',
+  'What is a memory of us you replay often?',
+  'What is something you want us to try this month?',
+  'What was your first impression of me?',
+  'What is your favorite way to spend a lazy Sunday together?',
+  'What is one thing you are proud of yourself for lately?',
+  'What is a food that will always remind you of us?',
+  'If we had a theme song, what would it be?',
+  'What is a dream you have not told many people?',
+  'What is the best date we have ever been on?',
+  'What is something that always makes you feel loved?',
+  'What is a habit of mine you secretly find cute?',
+  'What would your perfect day with me look like?',
+  'What is a place you want to visit together before next year?',
+  'What is one thing you would like more of from me this week?',
+  'What is a movie or show we should watch together next?',
+  'What is something you learned about yourself because of us?',
+  'What is your favorite photo of us and why?',
+  'If we wrote a book about us, what would the title be?',
+  'What is one thing that made you laugh this week?',
+  'What is a tiny tradition you want us to start?',
+  'What is something you are looking forward to?',
+  'What is the most "us" thing we do?',
+  'What is a compliment you have never told me?',
+  'What do you think we will be doing in five years?',
+  'What is your love language right now, this week?',
+  'What is something that stressed you out lately that I can help with?',
+  'What is the sweetest text I have ever sent you?',
+  'What is something new you would like to learn together?',
+  'If today had a color, what would it be?',
+  'What is a moment you felt really close to me?',
+  'What is one thing on your mind that you have not said out loud?',
+  'What would you cook for our dream dinner?',
+  'What three words describe us?',
+  'What is the bravest thing you have done?',
+  'What do you miss most when we are apart?',
+  'What is a goal you want us to reach together this year?',
+  'What is your favorite thing about our home or our space?',
+  'What is something you are grateful for today?',
+  'What is the funniest thing that has happened to us?',
+  'What do you want to be remembered for?',
+  'What is a small surprise that would make your day?',
+  'What is a question you have always wanted to ask me?',
+]
+
+export function questionForDate(dateStr) {
+  const days = Math.floor(new Date(`${dateStr}T00:00:00`).getTime() / 86400000)
+  return DAILY_QUESTIONS[((days % DAILY_QUESTIONS.length) + DAILY_QUESTIONS.length) % DAILY_QUESTIONS.length]
+}

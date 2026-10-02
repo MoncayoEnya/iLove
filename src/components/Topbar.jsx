@@ -6,6 +6,9 @@ import { useTheme } from '../context/ThemeContext'
 import { usePartner } from '../hooks/usePartner'
 import ThemeToggle from './ThemeToggle'
 import GlobalSearch from './GlobalSearch'
+import ThinkingOfYouButton from './ThinkingOfYouButton'
+import { isOnline, lastSeenText } from '../hooks/usePresence'
+import { useEffect, useState } from 'react'
 
 function greeting() {
   const h = dayjs().hour()
@@ -14,19 +17,35 @@ function greeting() {
   return 'Good evening'
 }
 
-function Avatar({ name, photoURL, tone }) {
+function Avatar({ name, photoURL, tone, online, title }) {
   return (
-    <div
-      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border-2 border-white overflow-hidden flex-shrink-0 ${tone}`}
-      title={name}
-    >
-      {photoURL ? (
-        <img src={photoURL} alt="" className="w-full h-full object-cover" />
-      ) : (
-        (name || '?')[0]?.toUpperCase()
+    <div className="relative flex-shrink-0" title={title || name}>
+      <div
+        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border-2 border-white overflow-hidden ${tone}`}
+      >
+        {photoURL ? (
+          <img src={photoURL} alt="" className="w-full h-full object-cover" />
+        ) : (
+          (name || '?')[0]?.toUpperCase()
+        )}
+      </div>
+      {online && (
+        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-[#3fbf7f] border-2 border-white">
+          <span className="absolute inset-0 rounded-full bg-[#3fbf7f] animate-ping opacity-60" />
+        </span>
       )}
     </div>
   )
+}
+
+// Re-render every 30s so "online" fades to "active 3 minutes ago" on time
+// even when the partner's doc hasn't changed.
+function useTick(ms = 30000) {
+  const [, setN] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setN((n) => n + 1), ms)
+    return () => clearInterval(id)
+  }, [ms])
 }
 
 // The single top bar for the whole app — greeting, search, the couple's
@@ -40,6 +59,9 @@ export default function Topbar({ onOpenConnection }) {
   const isLight = theme === 'light'
   const { profile, couple } = useAuth()
   const { partner } = usePartner()
+  useTick()
+  const partnerOnline = isOnline(partner)
+  const partnerSeen = lastSeenText(partner)
 
   const coupleLabel = partner
     ? `${profile?.displayName || 'You'} & ${partner?.displayName || 'Partner'}`
@@ -82,6 +104,8 @@ export default function Topbar({ onOpenConnection }) {
         <GlobalSearch light={isLight} />
         <ThemeToggle light={isLight} />
 
+        <ThinkingOfYouButton light={isLight} />
+
         <button
           aria-label="Notifications"
           className={`w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${
@@ -114,7 +138,13 @@ export default function Topbar({ onOpenConnection }) {
           <div className="flex items-center -space-x-2">
             <Avatar name={profile?.displayName} photoURL={profile?.photoURL} tone="bg-blush text-peach" />
             {partner && (
-              <Avatar name={partner?.displayName} photoURL={partner?.photoURL} tone="bg-[#d7efe9] text-[#1f7a68]" />
+              <Avatar
+                name={partner?.displayName}
+                photoURL={partner?.photoURL}
+                tone="bg-[#d7efe9] text-[#1f7a68]"
+                online={partnerOnline}
+                title={partnerSeen ? `${partner?.displayName} · ${partnerSeen}` : partner?.displayName}
+              />
             )}
           </div>
           <span

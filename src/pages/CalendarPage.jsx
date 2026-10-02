@@ -3,7 +3,6 @@ import dayjs from 'dayjs'
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDocs,
   onSnapshot,
@@ -15,6 +14,7 @@ import {
 } from 'firebase/firestore'
 import {
   FiBell,
+  FiClock,
   FiBriefcase,
   FiCalendar,
   FiChevronLeft,
@@ -41,6 +41,7 @@ import MonthCalendarGrid from '../components/MonthCalendarGrid'
 import DayDetailPanel from '../components/DayDetailPanel'
 import MoodDayDetail from '../components/MoodDayDetail'
 import EmptyState from '../components/EmptyState'
+import { undoableDelete } from '../utils/undoDelete'
 
 function moodInfo(v) {
   return MOODS.find((m) => m.v === v)
@@ -149,6 +150,7 @@ export default function CalendarPage() {
   const [recurrence, setRecurrence] = useState('none')
   const [reminderChoice, setReminderChoice] = useState('none')
   const [isPrivate, setIsPrivate] = useState(false)
+  const [showCountdown, setShowCountdown] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(null) // event id
   const [addOpen, setAddOpen] = useState(false)
@@ -251,6 +253,8 @@ export default function CalendarPage() {
           reminderNotified: false,
           private: isPrivate,
           ownerId: isPrivate ? firebaseUser.uid : null,
+          // Big countdown on the dashboard (trips, visits, anniversaries).
+          countdown: showCountdown && !isPrivate,
           createdBy: firebaseUser.uid,
           createdAt: serverTimestamp(),
         })
@@ -301,6 +305,7 @@ export default function CalendarPage() {
       setRecurrence('none')
       setReminderChoice('none')
       setIsPrivate(false)
+      setShowCountdown(false)
       setAddOpen(false)
     } finally {
       setSaving(false)
@@ -309,7 +314,7 @@ export default function CalendarPage() {
 
   async function deleteSingle(ev) {
     if (isLockedFor(ev, firebaseUser.uid)) return
-    await deleteDoc(doc(db, 'couples', coupleId, 'events', ev.id))
+    await undoableDelete(doc(db, 'couples', coupleId, 'events', ev.id), ev, 'Event deleted')
     setConfirmingDelete(null)
   }
 
@@ -541,6 +546,11 @@ export default function CalendarPage() {
                                       <FiRepeat size={10} /> {RECUR_BADGE[ev.recurrence]}
                                     </span>
                                   )}
+                                  {ev.countdown && (
+                                    <span className="flex items-center gap-1 text-[10px] text-peach border border-peach/30 rounded-full px-2 py-0.5">
+                                      <FiClock size={10} /> Countdown
+                                    </span>
+                                  )}
                                   {ev.reminder && (
                                     <span className="flex items-center gap-1 text-[10px] text-[#9a8a9c] border border-black/10 rounded-full px-2 py-0.5">
                                       <FiBell size={10} />{' '}
@@ -734,6 +744,19 @@ export default function CalendarPage() {
                     Private — only I can see this (
                     {partner?.displayName || 'your partner'} will just see that you have a reminder)
                   </label>
+
+                  {recurrence === 'none' && !isPrivate && (
+                    <label className="flex items-center gap-2 mt-2 text-sm text-[#6b5a6d] cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={showCountdown}
+                        onChange={(e) => setShowCountdown(e.target.checked)}
+                        className="rounded border-black/20"
+                      />
+                      <FiClock size={12} />
+                      Show a countdown to this on the dashboard
+                    </label>
+                  )}
 
                   <button
                     onClick={addEvent}

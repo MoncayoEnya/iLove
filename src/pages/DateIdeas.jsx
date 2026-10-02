@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   onSnapshot,
   serverTimestamp,
@@ -34,6 +33,7 @@ import { useAuth } from '../context/AuthContext'
 import { useMemberNames } from '../hooks/useMemberNames'
 import { DATE_IDEAS, DATE_IDEA_TAGS, DATE_IDEA_CATEGORIES } from '../data/dateIdeas'
 import EmptyState from '../components/EmptyState'
+import { undoableDelete } from '../utils/undoDelete'
 
 function tagLabel(value) {
   return DATE_IDEA_TAGS.find((t) => t.value === value)?.label || value
@@ -186,7 +186,7 @@ export default function DateIdeas() {
 
   async function removeCustom(idea) {
     try {
-      await deleteDoc(doc(db, 'couples', coupleId, 'customDateIdeas', idea.id))
+      await undoableDelete(doc(db, 'couples', coupleId, 'customDateIdeas', idea.id), idea, 'Idea removed')
     } catch (e) {
       toast.error("Couldn't remove that — try again.")
     }
@@ -289,7 +289,7 @@ export default function DateIdeas() {
         <div className="bg-white border border-black/10 rounded-2xl overflow-hidden">
           {groups.length === 0 ? (
             <div className="p-5">
-              <EmptyState icon={FiCompass} title="No ideas match" subtitle="Try a different tag, or add your own." />
+              <EmptyState delay={0} icon={FiCompass} title="No ideas match" subtitle="Try a different tag, or add your own." />
             </div>
           ) : (
             groups.map((group, gi) => {
