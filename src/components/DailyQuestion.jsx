@@ -13,7 +13,16 @@ import { haptic } from '../utils/haptics'
 //
 // Data: couples/{coupleId}/dailyAnswers/{YYYY-MM-DD}
 //         = { [uid]: { text, at } }
-export default function DailyQuestion({ coupleId, uid, partnerUid, partnerName = 'Your partner', today, onStatus }) {
+export default function DailyQuestion({
+  coupleId,
+  uid,
+  partnerUid,
+  partnerName = 'Your partner',
+  today,
+  onStatus,
+  anchorId = 'daily-question',
+  className = '',
+}) {
   const [answers, setAnswers] = useState({})
   const [draft, setDraft] = useState('')
   const [editing, setEditing] = useState(false)
@@ -64,7 +73,7 @@ export default function DailyQuestion({ coupleId, uid, partnerUid, partnerName =
   const showInput = !mine || editing
 
   return (
-    <div id="daily-question" className="bg-white border border-black/10 rounded-2xl p-5 scroll-mt-24">
+    <div id={anchorId} className={`bg-white border border-black/10 rounded-2xl p-5 scroll-mt-24 ${className}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] flex items-center gap-1.5">
           <FiMessageSquare size={12} /> Question of the day

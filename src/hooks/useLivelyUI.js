@@ -44,9 +44,17 @@ function hasReactClick(el) {
 }
 
 // Overlays (modals, sheets) and anything wrapped in data-lv-off (e.g. the
-// places map, whose tiles are images) are left alone.
+// places map, whose tiles are images) are left alone — except full-screen
+// layers that opt back in with data-lv-on (the Connection view is a whole
+// page that happens to slide over the app, so it gets the effects too).
 function isOverlay(el) {
-  return !!el.closest('[role="dialog"], .fixed, [aria-modal="true"], [data-lv-off]')
+  if (el.closest('[data-lv-off]')) return true
+  const overlay = el.closest('[role="dialog"], .fixed, [aria-modal="true"]')
+  if (!overlay) return false
+  const optIn = el.closest('[data-lv-on]')
+  // Allowed only if the nearest overlay is the opted-in layer itself (or
+  // wraps it) — a popup opened *inside* that layer stays excluded.
+  return !(optIn && overlay.contains(optIn))
 }
 
 function classify(el) {

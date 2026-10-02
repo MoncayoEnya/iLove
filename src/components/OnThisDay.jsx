@@ -25,7 +25,7 @@ function dayRange(d) {
   return [d.startOf('day').toDate(), d.endOf('day').toDate()]
 }
 
-export default function OnThisDay({ coupleId, names = {} }) {
+export default function OnThisDay({ coupleId, names = {}, className = '', emptyFallback = null }) {
   const [items, setItems] = useState(null) // null = loading
   const [index, setIndex] = useState(0)
   const today = dayjs().format('YYYY-MM-DD')
@@ -103,7 +103,8 @@ export default function OnThisDay({ coupleId, names = {} }) {
 
   const item = useMemo(() => (items && items.length ? items[index % items.length] : null), [items, index])
 
-  if (!items || items.length === 0 || !item) return null
+  if (!items) return null // still loading
+  if (items.length === 0 || !item) return emptyFallback
 
   const photo = item.photoData
   const mood = item.type === 'checkin' ? MOODS.find((m) => m.v === item.mood) : null
@@ -114,7 +115,7 @@ export default function OnThisDay({ coupleId, names = {} }) {
   const body = item.type === 'checkin' ? item.gratitude || item.journal : ''
 
   return (
-    <div className="bg-white border border-black/10 rounded-2xl overflow-hidden">
+    <div className={`bg-white border border-black/10 rounded-2xl overflow-hidden ${className}`}>
       <div className="flex items-center justify-between px-5 pt-4">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] flex items-center gap-1.5">
           <FiClock size={12} /> On this day

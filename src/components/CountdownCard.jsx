@@ -41,7 +41,7 @@ function Unit({ value, label }) {
   )
 }
 
-export default function CountdownCard({ events }) {
+export default function CountdownCard({ events, className = 'mb-4' }) {
   const now = useNow()
   const target = useMemo(() => {
     const upcoming = (events || [])
@@ -67,7 +67,7 @@ export default function CountdownCard({ events }) {
   const seconds = Math.floor((diff % 60000) / 1000)
 
   return (
-    <div className="mb-4 rounded-2xl p-5 text-plumdeep bg-gradient-to-br from-peach/30 to-gold/30 border border-peach/25 flex flex-col sm:flex-row sm:items-center gap-4 relative overflow-hidden">
+    <div className={`${className} rounded-2xl p-5 text-plumdeep bg-gradient-to-br from-peach/30 to-gold/30 border border-peach/25 flex flex-col sm:flex-row sm:items-center gap-4 relative overflow-hidden`}>
       <motion.div
         aria-hidden="true"
         className="absolute left-[40%] -bottom-10 opacity-[0.08] pointer-events-none select-none"
