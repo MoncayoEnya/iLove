@@ -79,11 +79,16 @@ function AppLayout({ children }) {
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <Topbar onOpenConnection={() => setConnectionOpen(true)} />
         <div
-          className="flex-1 p-4 sm:p-6 lg:p-9 pb-24 lg:pb-9 max-w-full lg:max-w-[900px] xl:max-w-[1200px] overflow-y-auto"
+          className="flex-1 p-4 sm:p-6 lg:p-9 pb-24 lg:pb-9 overflow-y-auto"
           onTouchStart={onContentTouchStart}
           onTouchEnd={onContentTouchEnd}
         >
-          <PageTransition>{children}</PageTransition>
+          {/* The scroll area spans the full width (so the wheel works
+              anywhere); the content inside grows with the screen up to a
+              comfortable reading width. */}
+          <div className="w-full max-w-[1600px]">
+            <PageTransition>{children}</PageTransition>
+          </div>
         </div>
       </div>
       {!pathname.startsWith('/chat') && <FloatingActionButton />}

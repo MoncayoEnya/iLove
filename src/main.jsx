@@ -25,8 +25,17 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // Registers public/sw.js so the app is installable and the last-loaded
 // screen is available offline. See public/sw.js for what it does and
 // doesn't cover (no push notifications — that needs a backend).
+//
+// Only in the built/deployed site. During `npm run dev` a service worker
+// would keep serving an old cached copy of the app, so code changes seem
+// to "do nothing" — in dev we remove any worker left over from before.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {})
-  })
+  if (import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {})
+    })
+  } else {
+    navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()))
+    if (window.caches) caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)))
+  }
 }
