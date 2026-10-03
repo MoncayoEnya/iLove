@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import dayjs from 'dayjs'
@@ -71,6 +72,8 @@ export default function NotificationBell({ light }) {
     /iPhone|iPad/i.test(navigator.userAgent) &&
     !window.matchMedia?.('(display-mode: standalone)').matches
   const wrapRef = useRef(null)
+  const panelRef = useRef(null)
+  const [pos, setPos] = useState(null) // where the dropdown sits, from the bell's position
 
   const go = useCallback(
     (n) => {
@@ -97,9 +100,27 @@ export default function NotificationBell({ light }) {
     return () => navigator.serviceWorker.removeEventListener('message', onMsg)
   }, [go])
 
+  // The dropdown is drawn at the top level of the page (a portal), so no
+  // parent layout can clip or hide it. Place it under the bell: full width
+  // with a small margin on phones, a 360px card on bigger screens.
+  function placePanel() {
+    const r = wrapRef.current?.getBoundingClientRect()
+    if (!r) return
+    const top = Math.round(r.bottom + 8)
+    if (window.innerWidth < 640) setPos({ top, left: 12, right: 12 })
+    else setPos({ top, right: Math.max(12, Math.round(window.innerWidth - r.right)), width: 360 })
+  }
+
+  useEffect(() => {
+    if (!open) return undefined
+    window.addEventListener('resize', placePanel)
+    return () => window.removeEventListener('resize', placePanel)
+  }, [open])
+
   function toggle() {
     if (open) return setOpen(false)
     setDotsSince(seenAt)
+    placePanel()
     setOpen(true)
     if (unreadCount) markAllSeen()
   }
@@ -108,7 +129,7 @@ export default function NotificationBell({ light }) {
   useEffect(() => {
     if (!open) return undefined
     const onDown = (e) => {
-      if (!wrapRef.current?.contains(e.target)) setOpen(false)
+      if (!wrapRef.current?.contains(e.target) && !panelRef.current?.contains(e.target)) setOpen(false)
     }
     const onKey = (e) => e.key === 'Escape' && setOpen(false)
     document.addEventListener('pointerdown', onDown)
@@ -169,9 +190,12 @@ export default function NotificationBell({ light }) {
         </AnimatePresence>
       </button>
 
+      {createPortal(
       <AnimatePresence>
-        {open && (
+        {open && pos && (
           <motion.div
+            ref={panelRef}
+            style={pos}
             data-lv-off
             role="dialog"
             aria-label="Notifications"
@@ -179,7 +203,7 @@ export default function NotificationBell({ light }) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.16 }}
-            className={`fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[68px] sm:top-[calc(100%+8px)] sm:w-[360px] z-50 rounded-2xl border shadow-xl overflow-hidden ${
+            className={`fixed z-[60] rounded-2xl border shadow-xl overflow-hidden ${
               light ? 'bg-white border-black/10 text-plumdeep' : 'bg-plumdeep border-white/15 text-[#f3e6e8]'
             }`}
           >
@@ -262,7 +286,9 @@ export default function NotificationBell({ light }) {
             )}
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
     </div>
   )
 }

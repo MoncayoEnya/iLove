@@ -1,5 +1,5 @@
 import dayjs from 'dayjs'
-import { FiBell, FiChevronRight, FiHeart } from 'react-icons/fi'
+import { FiChevronRight, FiHeart } from 'react-icons/fi'
 import { FaFire } from 'react-icons/fa'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
@@ -7,6 +7,7 @@ import { usePartner } from '../hooks/usePartner'
 import ThemeToggle from './ThemeToggle'
 import GlobalSearch from './GlobalSearch'
 import ThinkingOfYouButton from './ThinkingOfYouButton'
+import NotificationBell from './NotificationBell'
 import { isOnline, lastSeenText } from '../hooks/usePresence'
 import { useEffect, useState } from 'react'
 
@@ -106,14 +107,7 @@ export default function Topbar({ onOpenConnection }) {
 
         <ThinkingOfYouButton light={isLight} />
 
-        <button
-          aria-label="Notifications"
-          className={`w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${
-            isLight ? 'border-black/10 text-plumdeep' : 'border-white/15 text-[#f3e6e8]'
-          }`}
-        >
-          <FiBell size={16} />
-        </button>
+        <NotificationBell light={isLight} />
 
         {/* Opens the connection view — same content you'd reach by swiping
             left from anywhere in the app (see AppLayout). */}
