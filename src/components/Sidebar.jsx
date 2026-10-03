@@ -5,6 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useUIStore } from '../store/uiStore'
 import { navGroups } from '../navConfig'
 import Logo from './Logo'
+import { usePersistentScroll } from '../hooks/usePersistentScroll'
 
 const secondaryItems = [['/settings', FiSettings, 'Settings']]
 
@@ -65,6 +66,8 @@ export default function Sidebar() {
   const mobileOpen = useUIStore((s) => s.mobileNavOpen)
   const setMobileOpen = useUIStore((s) => s.setMobileNavOpen)
   const toggleMobileOpen = useUIStore((s) => s.toggleMobileNav)
+  // Keep the sidebar where you scrolled it when you open another page.
+  const navScrollRef = usePersistentScroll('sidebar-nav')
 
   return (
     <>
@@ -150,7 +153,7 @@ export default function Sidebar() {
           isLight ? 'bg-white text-plumdeep border-r border-black/10' : 'bg-plumdeep text-[#f3e6e8]'
         }`}
       >
-        <nav className="flex-1 min-h-0 overflow-y-auto p-5 pb-2 flex flex-col gap-1">
+        <nav ref={navScrollRef} className="flex-1 min-h-0 overflow-y-auto p-5 pb-2 flex flex-col gap-1">
           {navGroups.map((group, i) => (
             <div
               key={group.label || i}

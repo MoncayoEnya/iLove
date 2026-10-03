@@ -1,18 +1,75 @@
 import { useEffect, useState } from 'react'
-import { doc, onSnapshot, setDoc } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  documentId,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  runTransaction,
+  setDoc,
+} from 'firebase/firestore'
 import { AnimatePresence, motion } from 'framer-motion'
 import { FiEdit2, FiLock, FiMessageSquare } from 'react-icons/fi'
+import { HiSparkles } from 'react-icons/hi2'
 import toast from 'react-hot-toast'
 import { db } from '../firebase'
 import { questionForDate } from '../data/dailyQuestions'
 import { celebrate } from '../utils/celebrate'
 import { haptic } from '../utils/haptics'
+import { askAI } from '../utils/ai'
 
-// Daily question: the same question for both of you each day. Your
-// partner's answer stays blurred until you've answered too.
+// One generation per couple per day per browser tab, even if the card is on
+// screen twice (Dashboard + Connection view).
+const inFlight = new Map()
+
+// Makes today's question with AI (avoiding the last few weeks' questions)
+// and stores it on today's answers doc, so both partners get the same one.
+// If the AI can't be reached, the built-in list is used instead — the card
+// always has a question.
+function ensureTodaysQuestion(coupleId, today) {
+  const key = `${coupleId}/${today}`
+  if (inFlight.has(key)) return inFlight.get(key)
+  const job = (async () => {
+    const ref = doc(db, 'couples', coupleId, 'dailyAnswers', today)
+    let question = ''
+    let source = 'list'
+    let recent = []
+    try {
+      const recentSnap = await getDocs(
+        query(collection(db, 'couples', coupleId, 'dailyAnswers'), orderBy(documentId(), 'desc'), limit(25))
+      )
+      recent = recentSnap.docs.map((d) => d.data().question).filter(Boolean)
+    } catch {
+      // Not critical — just means repeats aren't filtered out today.
+    }
+    try {
+      const res = await askAI('question', { recent }, 9000)
+      if (res?.question) {
+        question = res.question
+        source = 'ai'
+      }
+    } catch {
+      // AI not set up / offline — fall back below.
+    }
+    if (!question) question = questionForDate(today)
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref)
+      if (snap.exists() && snap.data().question) return // partner got there first
+      tx.set(ref, { question, questionSource: source }, { merge: true })
+    })
+  })().finally(() => setTimeout(() => inFlight.delete(key), 60000))
+  inFlight.set(key, job)
+  return job
+}
+
+// Daily question: the same question for both of you each day, written
+// fresh by AI. Your partner's answer stays blurred until you've answered.
 //
 // Data: couples/{coupleId}/dailyAnswers/{YYYY-MM-DD}
-//         = { [uid]: { text, at } }
+//         = { question, questionSource: 'ai' | 'list', [uid]: { text, at } }
 export default function DailyQuestion({
   coupleId,
   uid,
@@ -28,7 +85,8 @@ export default function DailyQuestion({
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const question = questionForDate(today)
+  const [generating, setGenerating] = useState(false)
+  const question = answers.question || (generating ? '' : questionForDate(today))
 
   useEffect(() => {
     if (!coupleId) return undefined
@@ -45,6 +103,19 @@ export default function DailyQuestion({
 
   const mine = answers[uid]
   const theirs = partnerUid ? answers[partnerUid] : null
+
+  // No question stored for today yet: make one (first person to open wins).
+  useEffect(() => {
+    if (!loaded || !coupleId || answers.question) return undefined
+    let cancelled = false
+    setGenerating(true)
+    ensureTodaysQuestion(coupleId, today)
+      .catch(() => {})
+      .finally(() => !cancelled && setGenerating(false))
+    return () => {
+      cancelled = true
+    }
+  }, [loaded, coupleId, today, answers.question])
 
   useEffect(() => {
     if (loaded) onStatus?.(!!mine)
@@ -77,6 +148,11 @@ export default function DailyQuestion({
       <div className="flex items-center justify-between mb-2">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9a8a9c] flex items-center gap-1.5">
           <FiMessageSquare size={12} /> Question of the day
+          {answers.questionSource === 'ai' && (
+            <span title="Written fresh for you today" className="inline-flex items-center text-peach normal-case tracking-normal">
+              <HiSparkles size={12} />
+            </span>
+          )}
         </span>
         {mine && !editing && (
           <button
@@ -91,7 +167,21 @@ export default function DailyQuestion({
         )}
       </div>
 
-      <p className="font-serif text-lg font-semibold leading-snug">{question}</p>
+      {question ? (
+        <motion.p
+          key={question}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="font-serif text-lg font-semibold leading-snug"
+        >
+          {question}
+        </motion.p>
+      ) : (
+        <div className="space-y-2 py-1" aria-label="Writing today's question">
+          <div className="lv-shimmer h-4 rounded-lg bg-black/[0.06] w-11/12" />
+          <div className="lv-shimmer h-4 rounded-lg bg-black/[0.06] w-2/3" />
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
         {showInput ? (

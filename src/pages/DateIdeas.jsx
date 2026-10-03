@@ -34,6 +34,8 @@ import { useMemberNames } from '../hooks/useMemberNames'
 import { DATE_IDEAS, DATE_IDEA_TAGS, DATE_IDEA_CATEGORIES } from '../data/dateIdeas'
 import EmptyState from '../components/EmptyState'
 import { undoableDelete } from '../utils/undoDelete'
+import { HiSparkles } from 'react-icons/hi2'
+import { askAI } from '../utils/ai'
 
 function tagLabel(value) {
   return DATE_IDEA_TAGS.find((t) => t.value === value)?.label || value
@@ -104,6 +106,9 @@ export default function DateIdeas() {
   const [costPref, setCostPref] = useState('low')
   const [settingPref, setSettingPref] = useState('inside')
   const [picked, setPicked] = useState(null)
+  const [aiIdeas, setAiIdeas] = useState([])
+  const [aiLoading, setAiLoading] = useState(false)
+  const [savedAi, setSavedAi] = useState(() => new Set())
 
   useEffect(() => {
     if (!coupleId) return
@@ -244,6 +249,44 @@ export default function DateIdeas() {
     const options = pool.length > 1 ? pool.filter((i) => i.id !== picked?.id) : pool
     const choice = options[Math.floor(Math.random() * options.length)]
     setPicked(choice)
+  }
+
+  // Fresh ideas from AI, using the same Time / Energy / Cost / Setting
+  // choices as "Surprise us", and steering away from ideas already listed.
+  async function askAiForIdeas() {
+    if (aiLoading) return
+    setAiLoading(true)
+    try {
+      const res = await askAI('dateIdeas', {
+        prefs: { time: timePref, energy: energyPref, cost: costPref, setting: settingPref },
+        existing: allIdeas.map((i) => i.title),
+      })
+      setAiIdeas(res.ideas || [])
+      setSavedAi(new Set())
+    } catch {
+      toast.error("Couldn't get AI ideas right now — try Surprise us instead.")
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  async function saveAiIdea(idea, index) {
+    if (!coupleId) return
+    try {
+      await addDoc(collection(db, 'couples', coupleId, 'customDateIdeas'), {
+        title: idea.title,
+        tags: idea.tags || [],
+        done: false,
+        doneBy: null,
+        addedBy: firebaseUser.uid,
+        source: 'ai',
+        createdAt: serverTimestamp(),
+      })
+      setSavedAi((s) => new Set(s).add(index))
+      toast.success('Saved to your ideas.')
+    } catch {
+      toast.error("Couldn't save that — try again.")
+    }
   }
 
   return (
@@ -427,6 +470,45 @@ export default function DateIdeas() {
           >
             <FaDice size={15} /> Surprise us
           </button>
+          <button
+            onClick={askAiForIdeas}
+            disabled={aiLoading}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full font-semibold text-sm border border-peach/40 text-plum mb-2 disabled:opacity-60"
+          >
+            <HiSparkles size={15} className={aiLoading ? 'animate-pulse' : ''} />
+            {aiLoading ? 'Thinking of ideas…' : aiIdeas.length ? 'Ask AI for more' : 'Ask AI for ideas'}
+          </button>
+
+          {aiIdeas.length > 0 && (
+            <div className="bg-blush rounded-xl p-3 mb-2 space-y-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-plum/70 flex items-center gap-1">
+                <HiSparkles size={11} /> Fresh ideas for you
+              </div>
+              {aiIdeas.map((idea, i) => (
+                <div key={idea.title + i} className="bg-white/70 rounded-lg px-3 py-2 flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-plumdeep leading-snug">{idea.title}</div>
+                    {idea.tags?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {idea.tags.map((t) => (
+                          <span key={t} className="text-[10px] text-plum/70 bg-white rounded-full px-2 py-0.5">
+                            {tagLabel(t)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => saveAiIdea(idea, i)}
+                    disabled={savedAi.has(i)}
+                    className="text-xs font-semibold text-plum flex-shrink-0 disabled:text-[#2f6d3f]"
+                  >
+                    {savedAi.has(i) ? 'Saved' : 'Save'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {picked && (
             <div className="bg-blush rounded-xl p-3.5 mb-1 text-center">

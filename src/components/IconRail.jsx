@@ -7,6 +7,7 @@ import { useUIStore } from '../store/uiStore'
 import { navGroups, findNavItem } from '../navConfig'
 import Logo from './Logo'
 import BottomSheet from './BottomSheet'
+import { usePersistentScroll } from '../hooks/usePersistentScroll'
 
 function RailIcon({ to, Icon, label, end, isLight }) {
   return (
@@ -58,6 +59,7 @@ function ProfileDot({ profile, isLight }) {
 // every feature lives one column over, in Sidebar.jsx. Favorites are edited
 // from the "+" button, which opens a picker of every available route.
 export default function IconRail() {
+  const railScrollRef = usePersistentScroll('icon-rail')
   const { profile } = useAuth()
   const { theme } = useTheme()
   const isLight = theme === 'light'
@@ -77,7 +79,7 @@ export default function IconRail() {
         <Logo size="md" />
       </NavLink>
 
-      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1.5">
+      <div ref={railScrollRef} className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1.5">
         {favorites.map((item) => (
           <RailIcon
             key={item.to}
