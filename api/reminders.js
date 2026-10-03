@@ -22,10 +22,32 @@
 // This top-level collection is only touched by this server (admin access),
 // never by the app, so it needs no Firestore rules.
 
-import webpush from 'web-push'
-import { cert, getApps, initializeApp } from 'firebase-admin/app'
-import { getAuth } from 'firebase-admin/auth'
-import { getFirestore, Timestamp } from 'firebase-admin/firestore'
+// Libraries are loaded on first use, so a missing install shows up as a clear
+// message on ?check=1 instead of crashing the whole function.
+let webpush
+let Timestamp
+let libError = ''
+async function loadLibs() {
+  if (webpush && Timestamp) return true
+  try {
+    webpush = (await import('web-push')).default
+  } catch {
+    libError = 'web-push is not installed (run: npm install web-push, then commit package.json)'
+    return false
+  }
+  try {
+    const app = await import('firebase-admin/app')
+    const auth = await import('firebase-admin/auth')
+    const fs = await import('firebase-admin/firestore')
+    Timestamp = fs.Timestamp
+    libs = { ...app, getAuth: auth.getAuth, getFirestore: fs.getFirestore }
+    return true
+  } catch {
+    libError = 'firebase-admin is not installed (run: npm install firebase-admin, then commit package.json and package-lock.json)'
+    return false
+  }
+}
+let libs = null
 
 function serviceAccount() {
   const raw = (process.env.FIREBASE_SERVICE_ACCOUNT || '').trim()
@@ -42,12 +64,13 @@ function serviceAccount() {
 }
 
 function admin() {
-  if (!getApps().length) {
+  if (!libs) throw new Error(libError || 'libraries not loaded')
+  if (!libs.getApps().length) {
     const sa = serviceAccount()
     if (!sa) throw new Error('FIREBASE_SERVICE_ACCOUNT missing or not valid JSON')
-    initializeApp({ credential: cert(sa) })
+    libs.initializeApp({ credential: libs.cert(sa) })
   }
-  return { db: getFirestore(), auth: getAuth() }
+  return { db: libs.getFirestore(), auth: libs.getAuth() }
 }
 
 const vapid = () => ({
@@ -236,10 +259,13 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end()
   res.setHeader('Cache-Control', 'no-store')
   const q = req.query || {}
+  const libsOk = await loadLibs()
 
   // Self-check: /api/reminders?check=1 (never shows secrets)
   if (req.method === 'GET' && 'check' in q) {
     const report = {
+      librariesInstalled: libsOk,
+      ...(libsOk ? {} : { problem: libError }),
       serviceAccountValid: !!serviceAccount(),
       cronSecretSet: !!process.env.CRON_SECRET,
       vapidReady: !!(vapid().publicKey && vapid().privateKey),
@@ -255,7 +281,7 @@ export default async function handler(req, res) {
       report.firestoreConnected = false
       report.firestoreError = clip(e?.message || e, 160)
     }
-    report.ready = report.serviceAccountValid && report.cronSecretSet && report.vapidReady && report.firestoreConnected
+    report.ready = libsOk && report.serviceAccountValid && report.cronSecretSet && report.vapidReady && report.firestoreConnected
     return res.status(200).json(report)
   }
 
