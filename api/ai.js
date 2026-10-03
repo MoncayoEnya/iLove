@@ -108,6 +108,42 @@ function shapeResult(type, data) {
 export default async function handler(req, res) {
   setCors(req, res)
   if (req.method === 'OPTIONS') return res.status(204).end()
+
+  // Self-check: open https://<your-site>/api/ai?check=1 in a browser to see
+  // whether the key is set up and Groq accepts it. Never reveals the key.
+  if (req.method === 'GET' && 'check' in (req.query || {})) {
+    const raw = process.env.GROQ_API_KEY || ''
+    const k = raw.trim()
+    const report = {
+      keyPresent: !!k,
+      keyStartsWithGsk: k.startsWith('gsk_'),
+      keyLength: k.length,
+      keyHadExtraSpaces: raw !== k,
+      model: process.env.GROQ_MODEL || DEFAULT_MODEL,
+      node: process.version,
+    }
+    if (k && typeof fetch === 'function') {
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${k}` } })
+        report.groqStatus = r.status
+        const body = await r.json().catch(() => ({}))
+        if (r.ok) {
+          const ids = (body.data || []).map((m) => m.id)
+          report.groqKeyWorks = true
+          report.modelAvailable = ids.includes(report.model)
+          report.someModels = ids.filter((id) => /llama|gpt-oss|qwen|gemma/i.test(id)).slice(0, 12)
+        } else {
+          report.groqKeyWorks = false
+          report.groqMessage = body?.error?.message || 'unknown'
+        }
+      } catch (e) {
+        report.groqError = String(e?.message || e)
+      }
+    }
+    res.setHeader('Cache-Control', 'no-store')
+    return res.status(200).json(report)
+  }
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
 
   const key = process.env.GROQ_API_KEY
