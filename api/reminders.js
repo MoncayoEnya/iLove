@@ -1,7 +1,8 @@
 // Vercel serverless function: /api/reminders
 //
 // Two jobs, both delivered as push alerts (even when iLove is closed):
-//   1. Task reminders: "Reminder: Pay the bill" at the time picked on the task.
+//   1. Task reminders: "Reminder: Pay the bill" at the time picked on the task,
+//      and calendar reminders ("30 minutes before") from the Calendar page.
 //   2. Morning summary: once a day, "Today: 2 tasks · 1 event".
 //
 // It's woken up every 5 minutes by a free cron-job.org job (see setup). The
@@ -185,6 +186,65 @@ async function sendDueReminders(db) {
   return { due: due.size, sent }
 }
 
+// ---- 1b. Calendar event reminders ("30 minutes before", etc.) ----
+// The Calendar page already saves reminderAt on each event (repeating events
+// too). Every run looks at the last few hours of those per couple and pushes
+// the ones not pushed yet. reminderPushed is separate from the app's own
+// reminderNotified (the in-app alert), so an alert on an open tab doesn't
+// stop the phone from getting one.
+function to12h(t) {
+  if (!t || !/^\d{1,2}:\d{2}/.test(t)) return ''
+  const [h, m] = t.split(':').map(Number)
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+
+function whenText(ev) {
+  const mins = Number(ev.reminder?.minutesBefore ?? 0)
+  const at = to12h(ev.time)
+  if (mins >= 1440) return at ? `Tomorrow at ${at}` : 'Tomorrow'
+  if (mins >= 60) return `In ${mins / 60} hour${mins === 60 ? '' : 's'}${at ? ` (${at})` : ''}`
+  if (mins > 0) return `In ${mins} minutes${at ? ` (${at})` : ''}`
+  return at ? `Now (${at})` : 'Today'
+}
+
+async function sendEventReminders(db) {
+  const now = Date.now()
+  const since = Timestamp.fromMillis(now - 6 * 60 * 60 * 1000) // skip anything over 6h late
+  const until = Timestamp.fromMillis(now)
+  const couples = await db.collection('couples').get()
+  let due = 0
+  let sent = 0
+  for (const c of couples.docs) {
+    const members = c.get('members') || []
+    if (!members.length) continue
+    const snap = await c.ref
+      .collection('events')
+      .where('reminderAt', '>', since)
+      .where('reminderAt', '<=', until)
+      .limit(50)
+      .get()
+    for (const d of snap.docs) {
+      const ev = d.data()
+      if (ev.reminderPushed) continue
+      due++
+      const to = ev.private ? (ev.ownerId ? [ev.ownerId] : []) : members
+      const body = clip([whenText(ev), ev.note].filter(Boolean).join(' · '), 160)
+      try {
+        sent += await pushTo(db, c.id, to, {
+          title: clip(ev.title || 'Reminder', 90),
+          body,
+          url: '/calendar',
+          tag: d.id, // same tag as the in-app alert, so a device never shows both
+        })
+      } catch (e) {
+        console.error('event reminder failed', c.id, d.id, e?.message || e)
+      }
+      await d.ref.update({ reminderPushed: true }).catch(() => {})
+    }
+  }
+  return { due, sent }
+}
+
 // ---- 2. Morning summary, once a day ----
 function localNow(tz) {
   const parts = Object.fromEntries(
@@ -304,6 +364,11 @@ export default async function handler(req, res) {
   // ---- Cron run (cron-job.org every 5 minutes) ----
   if (isCron) {
     const out = { reminders: await sendDueReminders(db) }
+    try {
+      out.events = await sendEventReminders(db)
+    } catch (e) {
+      out.events = { error: clip(e?.message || e, 160) }
+    }
     try {
       out.summary = await sendMorningSummary(db, { force: q.summary === 'now' })
     } catch (e) {
