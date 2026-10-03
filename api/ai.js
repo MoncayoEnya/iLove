@@ -71,7 +71,7 @@ function buildPrompt(type, body) {
     const energy = pick(p.energy, ['easy', 'active'], 'easy')
     const cost = pick(p.cost, ['low', 'any'], 'low')
     const setting = pick(p.setting, ['inside', 'outside'], 'inside')
-    const existing = (Array.isArray(body.existing) ? body.existing : []).slice(0, 60).map((t) => clean(t, 80))
+    const existing = (Array.isArray(body.existing) ? body.existing : []).slice(-25).map((t) => clean(t, 70))
     return {
       system:
         'You suggest date ideas for a couple app. Ideas are specific and fun, one short line each (max 70 characters), ' +
@@ -181,7 +181,7 @@ export default async function handler(req, res) {
           body: JSON.stringify({
             model,
             temperature: prompt.temperature,
-            max_tokens: 500,
+            max_tokens: 350,
             ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
             messages: [
               { role: 'system', content: prompt.system },
@@ -199,10 +199,13 @@ export default async function handler(req, res) {
           }
           lastProblem = `Groq ${r.status} (${model}): ${String(msg).slice(0, 160)}`
           console.error(lastProblem)
-          // A bad key or rate limit won't be fixed by another model.
-          if (r.status === 401 || r.status === 403 || r.status === 429) {
+          // A bad key won't be fixed by another model — stop and say so.
+          if (r.status === 401 || r.status === 403) {
             return res.status(502).json({ error: lastProblem })
           }
+          // Rate limited: each Groq model has its own free limit, so skip
+          // straight to the next (smaller, higher-limit) model.
+          if (r.status === 429) break
           continue // try without JSON mode / next model
         }
         const json = await r.json()
@@ -218,5 +221,8 @@ export default async function handler(req, res) {
       }
     }
   }
-  return res.status(502).json({ error: lastProblem || 'Could not get an answer from the AI.' })
+  const limited = /Groq 429/.test(lastProblem)
+  return res
+    .status(limited ? 429 : 502)
+    .json({ error: limited ? 'The free AI needs a short breather. Try again in a minute.' : lastProblem || 'Could not get an answer from the AI.' })
 }

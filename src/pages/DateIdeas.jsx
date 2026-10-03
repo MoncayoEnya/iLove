@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
   collection,
@@ -109,6 +109,7 @@ export default function DateIdeas() {
   const [aiIdeas, setAiIdeas] = useState([])
   const [aiLoading, setAiLoading] = useState(false)
   const [savedAi, setSavedAi] = useState(() => new Set())
+  const aiCooldownUntil = useRef(0)
 
   useEffect(() => {
     if (!coupleId) return
@@ -255,16 +256,27 @@ export default function DateIdeas() {
   // choices as "Surprise us", and steering away from ideas already listed.
   async function askAiForIdeas() {
     if (aiLoading) return
+    // Free AI has a per-minute limit; a short pause between asks keeps it happy.
+    const wait = Math.ceil((aiCooldownUntil.current - Date.now()) / 1000)
+    if (wait > 0) {
+      toast(`Give it ${wait}s, then ask again.`, { icon: <HiSparkles className="text-peach" /> })
+      return
+    }
+    aiCooldownUntil.current = Date.now() + 8000
     setAiLoading(true)
     try {
       const res = await askAI('dateIdeas', {
         prefs: { time: timePref, energy: energyPref, cost: costPref, setting: settingPref },
-        existing: allIdeas.map((i) => i.title),
+        existing: allIdeas.filter((i) => i.custom).map((i) => i.title).slice(-25),
       })
       setAiIdeas(res.ideas || [])
       setSavedAi(new Set())
-    } catch {
-      toast.error("Couldn't get AI ideas right now — try Surprise us instead.")
+    } catch (e) {
+      // Show the real reason (e.g. "AI is not set up yet", or a 404 on
+      // localhost where the Vercel function doesn't run) to make setup easy.
+      const reason = e?.name === 'AbortError' ? 'it took too long' : e?.message || 'unknown error'
+      if (/breather/i.test(reason)) toast(reason, { icon: <HiSparkles className="text-peach" />, duration: 5000 })
+      else toast.error(`Couldn't get AI ideas (${reason}). Try Surprise us for now.`, { duration: 6000 })
     } finally {
       setAiLoading(false)
     }
