@@ -31,8 +31,8 @@ async function loadLibs() {
   if (webpush && Timestamp) return true
   try {
     webpush = (await import('web-push')).default
-  } catch {
-    libError = 'web-push is not installed (run: npm install web-push, then commit package.json)'
+  } catch (e) {
+    libError = `web-push could not load: ${String(e?.message || e).slice(0, 200)}`
     return false
   }
   try {
@@ -42,8 +42,11 @@ async function loadLibs() {
     Timestamp = fs.Timestamp
     libs = { ...app, getAuth: auth.getAuth, getFirestore: fs.getFirestore }
     return true
-  } catch {
-    libError = 'firebase-admin is not installed (run: npm install firebase-admin, then commit package.json and package-lock.json)'
+  } catch (e) {
+    const msg = String(e?.message || e)
+    libError = /Cannot find (package|module)/i.test(msg)
+      ? `firebase-admin is not installed (run: npm install firebase-admin, then commit package.json and package-lock.json). Details: ${msg.slice(0, 200)}`
+      : `firebase-admin could not load: ${msg.slice(0, 300)}`
     return false
   }
 }
@@ -264,6 +267,7 @@ export default async function handler(req, res) {
   // Self-check: /api/reminders?check=1 (never shows secrets)
   if (req.method === 'GET' && 'check' in q) {
     const report = {
+      node: process.version,
       librariesInstalled: libsOk,
       ...(libsOk ? {} : { problem: libError }),
       serviceAccountValid: !!serviceAccount(),
