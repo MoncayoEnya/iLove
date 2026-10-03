@@ -110,3 +110,24 @@ export async function sendPush(coupleId, { title, body, url, tag }) {
     /* offline / not set up — fine */
   }
 }
+
+const REMIND_URL = PUSH_URL.replace(/\/api\/push$/, '/api/reminders')
+
+// Registers a task's reminder with the server so it can be sent at the right
+// time even when nobody has iLove open. The server reads the time from the
+// task itself, so this only says "this task has a reminder now".
+export async function scheduleReminder(coupleId, taskId) {
+  try {
+    const user = auth.currentUser
+    if (!user || !coupleId || !taskId) return false
+    const token = await user.getIdToken()
+    const res = await fetch(REMIND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ coupleId, taskId }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}

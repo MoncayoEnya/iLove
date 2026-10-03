@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
 import toast from 'react-hot-toast'
 import {
+  FiBell,
   FiCalendar,
   FiCheck,
   FiChevronLeft,
@@ -21,6 +22,7 @@ import { todayStr } from '../utils/date'
 import { isLockedFor } from '../utils/privacy'
 import { celebrateFrom } from '../utils/celebrate'
 import { haptic } from '../utils/haptics'
+import { scheduleReminder } from '../utils/push'
 
 /** Monday (start of day) of the week containing `d`. */
 function mondayOf(d) {
@@ -101,6 +103,14 @@ function SwipeableTaskRow({ task, onToggle, overdue }) {
         </motion.button>
         <span className="flex-1 text-[15px] text-plumdeep truncate">{task.text}</span>
         {task.private && <FiLock size={11} className="text-[#b6a5b8] flex-shrink-0" />}
+        {task.remindAt?.toDate && task.remindAt.toDate() > new Date() && (
+          <span
+            title={`Reminder ${dayjs(task.remindAt.toDate()).format('MMM D, h:mm A')}`}
+            className="flex items-center gap-1 text-[11px] text-peach flex-shrink-0 whitespace-nowrap"
+          >
+            <FiBell size={11} /> {dayjs(task.remindAt.toDate()).format('h:mm A')}
+          </span>
+        )}
         {task.dueDate && (
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {overdue && <span className="w-1.5 h-1.5 rounded-full bg-[#e8635a] animate-pulse" />}
@@ -179,6 +189,8 @@ export default function Tasks() {
   const [dueDate, setDueDate] = useState('')
   const [isPrivate, setIsPrivate] = useState(false)
   const [showDatePicker, setShowDatePicker] = useState(false)
+  const [remindAt, setRemindAt] = useState('') // 'YYYY-MM-DDTHH:mm' from the picker
+  const [showRemindPicker, setShowRemindPicker] = useState(false)
   const [weekOffset, setWeekOffset] = useState(0)
 
   useEffect(() => {
@@ -193,8 +205,14 @@ export default function Tasks() {
     if (!t || !coupleId) return
     setText('')
     const assignedTo = assignee === 'me' ? firebaseUser.uid : assignee === 'partner' ? partnerUid : null
+    const remindDate = remindAt ? new Date(remindAt) : null
+    if (remindDate && remindDate <= new Date()) {
+      setText(t)
+      toast.error('Pick a reminder time in the future.')
+      return
+    }
     try {
-      await addDoc(collection(db, 'couples', coupleId, 'tasks'), {
+      const ref = await addDoc(collection(db, 'couples', coupleId, 'tasks'), {
         text: t,
         assignedTo,
         dueDate: dueDate || null,
@@ -203,12 +221,22 @@ export default function Tasks() {
         completedAt: null,
         private: isPrivate,
         ownerId: isPrivate ? firebaseUser.uid : null,
+        // Push reminder at this time to whoever the task is for (api/reminders.js).
+        remindAt: remindDate ? Timestamp.fromDate(remindDate) : null,
         createdBy: firebaseUser.uid,
         createdAt: serverTimestamp(),
       })
+      if (remindDate) {
+        scheduleReminder(coupleId, ref.id).then((ok) => {
+          if (ok) toast.success(`I'll remind ${assignee === 'partner' ? partner?.displayName || 'them' : assignee === 'me' ? 'you' : 'you both'} ${dayjs(remindDate).format('ddd h:mm A')}`)
+          else toast.error("Task saved, but the reminder couldn't be set.")
+        })
+      }
       setDueDate('')
+      setRemindAt('')
       setIsPrivate(false)
       setShowDatePicker(false)
+      setShowRemindPicker(false)
     } catch (e) {
       setText(t)
       toast.error("Couldn't add that task — try again.")
@@ -395,6 +423,17 @@ export default function Tasks() {
             </button>
             <button
               type="button"
+              onClick={() => setShowRemindPicker((s) => !s)}
+              title="Remind at a time"
+              aria-label="Set a reminder"
+              className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${
+                remindAt ? 'text-peach' : 'text-[#b6a5b8] hover:text-[#7a6a7c]'
+              }`}
+            >
+              <FiBell size={13} />
+            </button>
+            <button
+              type="button"
               onClick={() => setIsPrivate((p) => !p)}
               title="Only visible to me"
               aria-label="Toggle private task"
@@ -411,6 +450,17 @@ export default function Tasks() {
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
+              className="bg-black/[0.03] text-sm text-plumdeep rounded-xl px-3 py-2.5 border border-black/10 focus:outline-none flex-shrink-0"
+            />
+          )}
+
+          {showRemindPicker && (
+            <input
+              type="datetime-local"
+              aria-label="Reminder time"
+              value={remindAt}
+              min={dayjs().format('YYYY-MM-DDTHH:mm')}
+              onChange={(e) => setRemindAt(e.target.value)}
               className="bg-black/[0.03] text-sm text-plumdeep rounded-xl px-3 py-2.5 border border-black/10 focus:outline-none flex-shrink-0"
             />
           )}
