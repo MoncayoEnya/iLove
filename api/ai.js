@@ -172,6 +172,7 @@ export default async function handler(req, res) {
   // model being renamed/retired on Groq's side doesn't break the feature.
   const models = [...new Set([process.env.GROQ_MODEL || DEFAULT_MODEL, ...FALLBACK_MODELS])]
   let lastProblem = ''
+  const problems = []
   for (const model of models) {
     for (const jsonMode of [true, false]) {
       try {
@@ -181,7 +182,11 @@ export default async function handler(req, res) {
           body: JSON.stringify({
             model,
             temperature: prompt.temperature,
-            max_tokens: 350,
+            // gpt-oss models "think" first; give them room and keep the
+            // thinking short so the actual answer isn't cut off.
+            ...(model.startsWith('openai/gpt-oss')
+              ? { max_tokens: 2000, reasoning_effort: 'low' }
+              : { max_tokens: 350 }),
             ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
             messages: [
               { role: 'system', content: prompt.system },
@@ -198,6 +203,7 @@ export default async function handler(req, res) {
             /* keep raw text */
           }
           lastProblem = `Groq ${r.status} (${model}): ${String(msg).slice(0, 160)}`
+          problems.push(`${model}: ${r.status}`)
           console.error(lastProblem)
           // A bad key won't be fixed by another model — stop and say so.
           if (r.status === 401 || r.status === 403) {
@@ -210,6 +216,11 @@ export default async function handler(req, res) {
         }
         const json = await r.json()
         const content = json?.choices?.[0]?.message?.content || ''
+        if (!content.trim()) {
+          lastProblem = `${model}: empty reply`
+          problems.push(lastProblem)
+          continue
+        }
         // Pull the JSON object out even if the model wrapped it in text.
         const match = content.match(/\{[\s\S]*\}/)
         const result = shapeResult(type, JSON.parse(match ? match[0] : content))
@@ -217,12 +228,20 @@ export default async function handler(req, res) {
         return res.status(200).json(result)
       } catch (e) {
         lastProblem = `${model}: ${e?.message || e}`
+        problems.push(lastProblem)
         console.error('AI attempt failed', lastProblem)
       }
     }
   }
-  const limited = /Groq 429/.test(lastProblem)
+  // Mostly "busy" (429) across models -> friendly retry message.
+  const limited = problems.filter((p) => /: 429/.test(p)).length >= Math.max(1, models.length - 1)
   return res
     .status(limited ? 429 : 502)
-    .json({ error: limited ? 'The free AI needs a short breather. Try again in a minute.' : lastProblem || 'Could not get an answer from the AI.' })
+    .json({
+      error: limited
+        ? 'The free AI needs a short breather. Try again in a minute.'
+        : problems.length
+        ? `AI failed (${[...new Set(problems)].slice(0, 4).join('; ')})`
+        : 'Could not get an answer from the AI.',
+    })
 }
