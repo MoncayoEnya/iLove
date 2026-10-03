@@ -18,6 +18,7 @@
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
+const FALLBACK_MODELS = ['llama-3.1-8b-instant', 'openai/gpt-oss-20b']
 
 // Best-effort per-instance rate limit (serverless instances are short-lived,
 // so this just stops accidental loops / casual abuse).
@@ -127,33 +128,59 @@ export default async function handler(req, res) {
   const prompt = buildPrompt(type, body || {})
   if (!prompt) return res.status(400).json({ error: 'Unknown request type.' })
 
-  try {
-    const r = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: process.env.GROQ_MODEL || DEFAULT_MODEL,
-        temperature: prompt.temperature,
-        max_tokens: 400,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: prompt.system },
-          { role: 'user', content: prompt.user },
-        ],
-      }),
-    })
-    if (!r.ok) {
-      const detail = await r.text().catch(() => '')
-      console.error('Groq error', r.status, detail.slice(0, 300))
-      return res.status(502).json({ error: 'The AI is busy right now.' })
-    }
-    const json = await r.json()
-    const content = json?.choices?.[0]?.message?.content || '{}'
-    const result = shapeResult(type, JSON.parse(content))
-    res.setHeader('Cache-Control', 'no-store')
-    return res.status(200).json(result)
-  } catch (e) {
-    console.error('AI handler failed', e)
-    return res.status(502).json({ error: 'Could not get an answer from the AI.' })
+  if (typeof fetch !== 'function') {
+    return res.status(500).json({ error: 'Server Node.js is too old (needs 18+). Set Node 20 in Vercel → Settings → General.' })
   }
+
+  // Try the chosen model first, then two other free Groq models, so one
+  // model being renamed/retired on Groq's side doesn't break the feature.
+  const models = [...new Set([process.env.GROQ_MODEL || DEFAULT_MODEL, ...FALLBACK_MODELS])]
+  let lastProblem = ''
+  for (const model of models) {
+    for (const jsonMode of [true, false]) {
+      try {
+        const r = await fetch(GROQ_URL, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${key.trim()}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            temperature: prompt.temperature,
+            max_tokens: 500,
+            ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+            messages: [
+              { role: 'system', content: prompt.system },
+              { role: 'user', content: prompt.user },
+            ],
+          }),
+        })
+        if (!r.ok) {
+          const detail = await r.text().catch(() => '')
+          let msg = detail
+          try {
+            msg = JSON.parse(detail)?.error?.message || detail
+          } catch {
+            /* keep raw text */
+          }
+          lastProblem = `Groq ${r.status} (${model}): ${String(msg).slice(0, 160)}`
+          console.error(lastProblem)
+          // A bad key or rate limit won't be fixed by another model.
+          if (r.status === 401 || r.status === 403 || r.status === 429) {
+            return res.status(502).json({ error: lastProblem })
+          }
+          continue // try without JSON mode / next model
+        }
+        const json = await r.json()
+        const content = json?.choices?.[0]?.message?.content || ''
+        // Pull the JSON object out even if the model wrapped it in text.
+        const match = content.match(/\{[\s\S]*\}/)
+        const result = shapeResult(type, JSON.parse(match ? match[0] : content))
+        res.setHeader('Cache-Control', 'no-store')
+        return res.status(200).json(result)
+      } catch (e) {
+        lastProblem = `${model}: ${e?.message || e}`
+        console.error('AI attempt failed', lastProblem)
+      }
+    }
+  }
+  return res.status(502).json({ error: lastProblem || 'Could not get an answer from the AI.' })
 }
