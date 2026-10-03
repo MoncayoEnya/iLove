@@ -1,65 +1,19 @@
 import { useEffect } from 'react'
-import { doc, setDoc } from 'firebase/firestore'
-import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
+import { enablePush } from '../utils/push'
 
-// Set this in your .env file: VITE_VAPID_PUBLIC_KEY=<public key from `npx web-push generate-vapid-keys`>
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const rawData = atob(base64)
-  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)))
-}
-
-// Registers the service worker (public/sw.js — copy it from public-sw/sw.js
-// in this delivery) and subscribes this browser to push, then stores the
-// subscription in Firestore so the sendReminderPush scheduled Cloud
-// Function (functions/index.js) knows where to send calendar-reminder
-// notifications for this user. Call this once near the top of App.jsx,
-// e.g. right next to useLocalReminders() — it already is.
+// Keeps this device's push address fresh once alerts are allowed (browsers
+// sometimes rotate it). Turning alerts on the first time happens from the
+// bell: "Turn on alerts on this device". Mounted once in App.jsx.
 export function usePushSubscription() {
   const { firebaseUser, couple } = useAuth()
+  const uid = firebaseUser?.uid
+  const coupleId = couple?.id
 
   useEffect(() => {
-    if (!firebaseUser?.uid) return
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
-    if (!VAPID_PUBLIC_KEY) {
-      console.warn('usePushSubscription: VITE_VAPID_PUBLIC_KEY is not set — skipping push subscribe.')
-      return
-    }
-
-    let cancelled = false
-
-    async function subscribe() {
-      if (Notification.permission === 'default') {
-        const perm = await Notification.requestPermission()
-        if (perm !== 'granted') return
-      }
-      if (Notification.permission !== 'granted') return
-
-      const reg = await navigator.serviceWorker.register('/sw.js')
-      let sub = await reg.pushManager.getSubscription()
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-        })
-      }
-      if (cancelled) return
-
-      await setDoc(doc(db, 'pushSubscriptions', firebaseUser.uid), {
-        subscription: sub.toJSON(),
-        coupleId: couple?.id || null,
-        updatedAt: new Date(),
-      })
-    }
-
-    subscribe().catch((err) => console.error('Push subscribe failed:', err))
-
-    return () => {
-      cancelled = true
-    }
-  }, [firebaseUser?.uid, couple?.id])
+    if (!uid || !coupleId) return
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    if (Notification.permission !== 'granted') return
+    enablePush(coupleId, uid).catch((err) => console.warn('Push setup skipped:', err?.message || err))
+  }, [uid, coupleId])
 }

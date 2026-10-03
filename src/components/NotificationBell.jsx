@@ -25,6 +25,8 @@ import {
   FiZap,
 } from 'react-icons/fi'
 import { usePartner } from '../hooks/usePartner'
+import { useAuth } from '../context/AuthContext'
+import { enablePush, pushIsOn, pushSupported } from '../utils/push'
 import { useBackgroundAlerts, useNotifications } from '../hooks/useNotifications'
 
 dayjs.extend(relativeTime)
@@ -59,7 +61,15 @@ export default function NotificationBell({ light }) {
   const { items, unreadCount, seenAt, markAllSeen } = useNotifications()
   const [open, setOpen] = useState(false)
   const [dotsSince, setDotsSince] = useState(null) // unread dots stay while the panel is open
+  const { firebaseUser, couple } = useAuth()
   const [permission, setPermission] = useState(canNotify() ? Notification.permission : 'unsupported')
+  const [pushOn, setPushOn] = useState(pushIsOn())
+  const [enabling, setEnabling] = useState(false)
+  // iPhone/iPad only allow web alerts once the site is added to the Home Screen.
+  const iosNeedsInstall =
+    typeof navigator !== 'undefined' &&
+    /iPhone|iPad/i.test(navigator.userAgent) &&
+    !window.matchMedia?.('(display-mode: standalone)').matches
   const wrapRef = useRef(null)
 
   const go = useCallback(
@@ -73,6 +83,19 @@ export default function NotificationBell({ light }) {
   )
 
   useBackgroundAlerts(items, partnerName, go)
+
+  // Tapping a push alert while iLove is already open: the service worker
+  // (public/push-sw.js) asks the open app to go to that page.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return undefined
+    const onMsg = (e) => {
+      if (e.data?.type !== 'ilove-open') return
+      const u = new URL(e.data.url, window.location.origin)
+      go({ link: `${u.pathname}${u.search}${u.hash}` })
+    }
+    navigator.serviceWorker.addEventListener('message', onMsg)
+    return () => navigator.serviceWorker.removeEventListener('message', onMsg)
+  }, [go])
 
   function toggle() {
     if (open) return setOpen(false)
@@ -97,10 +120,15 @@ export default function NotificationBell({ light }) {
   }, [open])
 
   async function enableAlerts() {
+    setEnabling(true)
     try {
-      setPermission(await Notification.requestPermission())
-    } catch {
-      /* ignore */
+      const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
+      setPermission(perm)
+      if (perm === 'granted') setPushOn(await enablePush(couple?.id, firebaseUser?.uid))
+    } catch (e) {
+      console.warn('Could not turn on push:', e?.message || e)
+    } finally {
+      setEnabling(false)
     }
   }
 
@@ -206,17 +234,28 @@ export default function NotificationBell({ light }) {
               )}
             </div>
 
-            {permission !== 'unsupported' && (
+            {(permission !== 'unsupported' || iosNeedsInstall) && (
               <div className={`px-4 py-2.5 border-t text-xs ${light ? 'border-black/5' : 'border-white/10'} ${muted}`}>
-                {permission === 'granted' ? (
-                  <span className="flex items-center gap-1.5">
-                    <FiCheck size={12} className="text-[#3fa37a]" /> Alerts on, even while iLove is in the background
-                  </span>
+                {iosNeedsInstall && permission === 'unsupported' ? (
+                  <span>On iPhone, tap Share, then "Add to Home Screen", and open iLove from there to get alerts.</span>
                 ) : permission === 'denied' ? (
                   <span>Alerts are blocked. Allow notifications for this site in your browser settings.</span>
+                ) : permission === 'granted' && (pushOn || !pushSupported()) ? (
+                  <span className="flex items-center gap-1.5">
+                    <FiCheck size={12} className="text-[#3fa37a]" />
+                    {pushOn ? 'Alerts on, even when iLove is closed' : 'Alerts on while iLove is open'}
+                  </span>
                 ) : (
-                  <button onClick={enableAlerts} className="font-semibold text-peach hover:underline">
-                    Turn on alerts on this device
+                  <button
+                    onClick={enableAlerts}
+                    disabled={enabling}
+                    className="font-semibold text-peach hover:underline disabled:opacity-60"
+                  >
+                    {enabling
+                      ? 'Turning on…'
+                      : permission === 'granted'
+                      ? 'Get alerts even when iLove is closed'
+                      : 'Turn on alerts on this device'}
                   </button>
                 )}
               </div>

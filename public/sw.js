@@ -10,7 +10,7 @@
 //
 // This worker does nothing until the browser wakes it up for a push event —
 // it does NOT run continuously, so it costs no battery while idle.
-
+importScripts('/push-sw.js')
 self.addEventListener('install', () => {
   self.skipWaiting()
 })

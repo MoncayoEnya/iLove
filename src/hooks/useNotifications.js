@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { usePartner } from './usePartner'
 import { todayStr } from '../utils/date'
 import { moodInfo } from '../utils/moods'
+import { pushIsOn, sendPush } from '../utils/push'
 
 // Builds the notification feed from things your PARTNER did in the app
 // (new song, memory, task, message, check-in, nudge, ...). No server and no
@@ -177,6 +178,7 @@ export function useNotifications() {
   const uid = firebaseUser?.uid
   const coupleId = couple?.id
   const [bySource, setBySource] = useState({})
+  const [outBySource, setOutBySource] = useState({}) // things YOU did -> pushed to your partner
   const [today, setToday] = useState(todayStr())
 
   // Roll over at midnight so "answered today's question" follows the day.
@@ -188,6 +190,7 @@ export function useNotifications() {
   useEffect(() => {
     if (!coupleId || !uid || !partnerUid) {
       setBySource({})
+      setOutBySource({})
       return undefined
     }
     const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000)
@@ -201,16 +204,24 @@ export function useNotifications() {
         ),
         (snap) => {
           const items = []
+          const out = []
           snap.docs.forEach((d) => {
             const data = d.data()
-            if (src.by(data) !== partnerUid) return
+            const by = src.by(data)
             const at = toDate(data.createdAt)
             if (!at) return
-            const info = src.describe(data, uid)
-            if (!info) return
-            items.push({ id: `${src.col}/${d.id}`, at, ...info })
+            if (by === partnerUid) {
+              // Partner did it -> your bell. Worded for you.
+              const info = src.describe(data, uid)
+              if (info) items.push({ id: `${src.col}/${d.id}`, at, ...info })
+            } else if (by === uid) {
+              // You did it -> a push to your partner. Worded for them.
+              const info = src.describe(data, partnerUid)
+              if (info) out.push({ id: `${src.col}/${d.id}`, at, ...info })
+            }
           })
           setBySource((prev) => ({ ...prev, [src.col]: items }))
+          setOutBySource((prev) => ({ ...prev, [src.col]: out }))
         },
         () => setBySource((prev) => ({ ...prev, [src.col]: [] })) // no access / offline: stay quiet
       )
@@ -218,33 +229,67 @@ export function useNotifications() {
     return () => unsubs.forEach((u) => u())
   }, [coupleId, uid, partnerUid])
 
-  // Partner answered today's question of the day.
+  // Today's question of the day: partner's answer -> your bell, your answer
+  // -> a push to them.
   useEffect(() => {
-    if (!coupleId || !partnerUid) return undefined
+    if (!coupleId || !partnerUid || !uid) return undefined
+    const entry = (who, at) =>
+      at
+        ? [
+            {
+              id: `dailyAnswers/${today}/${who}`,
+              at,
+              type: 'question',
+              action: "answered today's question",
+              detail: 'Answer yours to unlock theirs',
+              link: '/dashboard#daily-question',
+            },
+          ]
+        : []
     return onSnapshot(
       doc(db, 'couples', coupleId, 'dailyAnswers', today),
       (snap) => {
-        const a = snap.exists() ? snap.data()[partnerUid] : null
-        const at = toDate(a?.at)
-        setBySource((prev) => ({
-          ...prev,
-          dailyAnswers: at
-            ? [
-                {
-                  id: `dailyAnswers/${today}`,
-                  at,
-                  type: 'question',
-                  action: "answered today's question",
-                  detail: 'Answer yours to unlock theirs',
-                  link: '/dashboard#daily-question',
-                },
-              ]
-            : [],
-        }))
+        const data = snap.exists() ? snap.data() : {}
+        setBySource((prev) => ({ ...prev, dailyAnswers: entry(partnerUid, toDate(data[partnerUid]?.at)) }))
+        setOutBySource((prev) => ({ ...prev, dailyAnswers: entry(uid, toDate(data[uid]?.at)) }))
       },
       () => {}
     )
-  }, [coupleId, partnerUid, today])
+  }, [coupleId, partnerUid, uid, today])
+
+  // Push what YOU just did to your partner's devices (works even when their
+  // app is closed — see utils/push.js and api/push.js). Only things done
+  // after this page opened, each once.
+  const openedAt = useRef(Date.now() - 2 * 60 * 1000)
+  const myName = profile?.displayName || 'Your partner'
+  useEffect(() => {
+    if (!coupleId) return
+    let sent
+    try {
+      sent = new Set(JSON.parse(sessionStorage.getItem('ilove-pushed') || '[]'))
+    } catch {
+      sent = new Set()
+    }
+    const fresh = Object.values(outBySource)
+      .flat()
+      .filter((n) => n.at.getTime() > openedAt.current && !sent.has(n.id))
+    if (!fresh.length) return
+    fresh.forEach((n) => {
+      sent.add(n.id)
+      sendPush(coupleId, {
+        title: `${myName} ${n.action}`,
+        body: n.detail || 'Open iLove to see it',
+        url: n.link,
+        // Chat messages replace each other instead of piling up.
+        tag: n.type === 'message' ? 'chat' : n.id,
+      })
+    })
+    try {
+      sessionStorage.setItem('ilove-pushed', JSON.stringify([...sent].slice(-200)))
+    } catch {
+      /* ignore */
+    }
+  }, [outBySource, coupleId, myName])
 
   const seenAt = toDate(profile?.notificationsSeenAt) || null
 
@@ -287,12 +332,14 @@ export function useBackgroundAlerts(items, partnerName, onOpen) {
     const fresh = items.filter((n) => n.at.getTime() > openedAt.current && !alerted.current.has(n.id))
     fresh.forEach((n) => alerted.current.add(n.id))
     if (!fresh.length || Notification.permission !== 'granted') return
+    // Real push is on for this device -> the service worker already shows it.
+    if (pushIsOn()) return
     // You're looking at the app — the bell badge is enough.
     if (document.visibilityState === 'visible' && document.hasFocus()) return
 
     fresh.slice(0, 3).forEach((n) => {
       const title = `${partnerName} ${n.action}`
-      const options = { body: n.detail || 'Open iLove to see it', tag: n.id }
+      const options = { body: n.detail || 'Open iLove to see it', tag: n.id, data: { url: n.link } }
       try {
         const note = new Notification(title, options)
         note.onclick = () => {
